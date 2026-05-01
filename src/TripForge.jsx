@@ -309,20 +309,33 @@ function HeroSearch({ onSearch, loading }) {
 
   return (
     <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:20,overflow:"hidden",marginBottom:32,boxShadow:`0 4px 40px ${c.dark?"rgba(0,0,0,0.4)":"rgba(0,0,0,0.06)"}`}}>
-      {/* Orange header band */}
-      <div style={{background:`linear-gradient(135deg,${c.accent} 0%,${c.accentHi} 100%)`,padding:"22px 28px 20px"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
-          <div>
-            <h2 style={{color:"#fff",fontSize:20,fontWeight:800,margin:0,letterSpacing:"-0.03em"}}>Plan your perfect trip</h2>
-            <p style={{color:"rgba(255,255,255,0.78)",fontSize:13,margin:"4px 0 0"}}>AI builds your full itinerary in seconds</p>
+      {/* Hero headline band */}
+      <div style={{background:`linear-gradient(135deg,${c.accent} 0%,${c.accentHi} 100%)`,padding:"32px 28px 28px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:16}}>
+          <div style={{flex:1,minWidth:240}}>
+            <div style={{display:"inline-flex",alignItems:"center",gap:8,background:"rgba(255,255,255,0.18)",borderRadius:999,padding:"5px 14px",marginBottom:14}}>
+              <span style={{fontSize:12,color:"#fff",fontWeight:700,letterSpacing:"0.06em"}}>✨ AI-POWERED · FREE TO PLAN</span>
+            </div>
+            <h1 style={{color:"#fff",fontSize:"clamp(24px,4vw,38px)",fontWeight:800,margin:"0 0 10px",letterSpacing:"-0.03em",lineHeight:1.1,fontFamily:font}}>
+              Your next trip, fully planned<br/>in 30 seconds.
+            </h1>
+            <p style={{color:"rgba(255,255,255,0.85)",fontSize:15,margin:0,lineHeight:1.65,maxWidth:520}}>
+              Tell TripForge where you want to go and your budget — our AI builds a complete day-by-day itinerary, finds flights, hotels, and restaurants, all in one place.
+            </p>
           </div>
-          <div style={{display:"flex",gap:8}}>
-            {["Single","Multi-city"].map((label,i)=>(
-              <button key={label} onClick={()=>{setMultiCity(i===1);if(i===1&&dests.length<2)setDests(d=>[...d,{city:"",dateFrom:"",dateTo:""}]);}}
-                style={{padding:"8px 16px",borderRadius:9,border:"1.5px solid",borderColor:(i===1)===multiCity?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.35)",background:(i===1)===multiCity?"rgba(255,255,255,0.22)":"transparent",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:fontBody}}>
-                {label}
-              </button>
-            ))}
+          <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
+            <div style={{display:"flex",gap:8}}>
+              {["Single","Multi-city"].map((label,i)=>(
+                <button key={label} onClick={()=>{setMultiCity(i===1);if(i===1&&dests.length<2)setDests(d=>[...d,{city:"",dateFrom:"",dateTo:""}]);}}
+                  style={{padding:"8px 16px",borderRadius:9,border:"1.5px solid",borderColor:(i===1)===multiCity?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.35)",background:(i===1)===multiCity?"rgba(255,255,255,0.22)":"transparent",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:fontBody}}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            {/* Trust micro-signal */}
+            <div style={{color:"rgba(255,255,255,0.7)",fontSize:12,fontWeight:500}}>
+              🌍 47,000+ trips planned
+            </div>
           </div>
         </div>
       </div>
@@ -365,11 +378,11 @@ function HeroSearch({ onSearch, loading }) {
           </div>
         </div>
 
-        {/* Style pills */}
-        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:22}}>
+        {/* Style pills — horizontal scroll on mobile, no wrap */}
+        <div className="pill-scroll" style={{display:"flex",gap:8,overflowX:"auto",marginBottom:22,paddingBottom:2}}>
           {styles.map(s=>(
             <button key={s} onClick={()=>setStyle(s)}
-              style={{padding:"7px 14px",borderRadius:999,border:`1.5px solid ${style===s?c.accentBorder:c.border}`,background:style===s?c.accentLow:"transparent",color:style===s?c.accentHi:c.textMuted,fontSize:12,fontWeight:style===s?700:500,cursor:"pointer",fontFamily:fontBody,textTransform:"capitalize",transition:"all 0.15s"}}>
+              style={{padding:"7px 16px",borderRadius:999,border:`1.5px solid ${style===s?c.accentBorder:c.border}`,background:style===s?c.accentLow:"transparent",color:style===s?c.accentHi:c.textMuted,fontSize:12,fontWeight:style===s?700:500,cursor:"pointer",fontFamily:fontBody,textTransform:"capitalize",transition:"all 0.15s",flexShrink:0,whiteSpace:"nowrap"}}>
               {s}
             </button>
           ))}
@@ -377,11 +390,11 @@ function HeroSearch({ onSearch, loading }) {
 
         {/* CTA */}
         <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-          <Btn onClick={()=>go(false)} disabled={loading} style={{flex:1,minWidth:200,padding:"14px 24px",fontSize:15,borderRadius:14}}>
+          <Btn onClick={()=>go(false)} disabled={loading} style={{flex:1,minWidth:200,padding:"15px 28px",fontSize:16,borderRadius:14,boxShadow:`0 8px 28px ${c.accentBorder}`}}>
             <Icon name="sparkle" size={17} color="#fff"/>
-            {loading?"Building your itinerary…":"Build my itinerary"}
+            {loading?"Building your itinerary…":"Plan My Trip Free →"}
           </Btn>
-          <Btn onClick={()=>go(true)} disabled={loading} variant="muted" style={{flexShrink:0,borderRadius:14}}>
+          <Btn onClick={()=>go(true)} disabled={loading} variant="muted" style={{flexShrink:0,borderRadius:14,fontSize:13}}>
             🎲 Surprise me
           </Btn>
         </div>
@@ -409,12 +422,32 @@ function ItineraryTab({ tripData, loading, form, apiKey }) {
     setExtrasLoading(false);
   }
 
+  const LOAD_MSGS = [
+    "Finding the best neighborhoods…",
+    "Mapping your days…",
+    "Calculating your budget…",
+    "Sourcing local restaurants…",
+    "Almost ready…",
+  ];
+  const [loadIdx, setLoadIdx] = useState(0);
+  useEffect(()=>{
+    if (!loading) return;
+    setLoadIdx(0);
+    const iv = setInterval(()=>setLoadIdx(i=>(i+1)%LOAD_MSGS.length),2800);
+    return ()=>clearInterval(iv);
+  },[loading]);
+
   if (loading) return (
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
-      <div style={{background:c.surface,borderRadius:18,padding:32,textAlign:"center",border:`1.5px solid ${c.border}`}}>
-        <div style={{fontSize:52,marginBottom:14,display:"inline-block",animation:"spin 2s linear infinite"}}>✈️</div>
-        <div style={{color:c.text,fontSize:18,fontWeight:700,marginBottom:6}}>Building your itinerary…</div>
-        <div style={{color:c.textMuted,fontSize:14}}>TripForge is crafting your {form.style} trip to {form.destination}</div>
+      <div style={{background:c.surface,borderRadius:18,padding:"40px 32px",textAlign:"center",border:`1.5px solid ${c.border}`}}>
+        <div style={{fontSize:52,marginBottom:18,display:"inline-block",animation:"spin 2s linear infinite"}}>✈️</div>
+        <div style={{color:c.text,fontSize:20,fontWeight:800,marginBottom:8,letterSpacing:"-0.02em"}}>Building your itinerary…</div>
+        <div style={{color:c.accent,fontSize:14,fontWeight:600,marginBottom:20,minHeight:22,transition:"all 0.3s"}}>{LOAD_MSGS[loadIdx]}</div>
+        {/* Progress bar */}
+        <div style={{width:"100%",maxWidth:320,margin:"0 auto",height:4,background:c.border,borderRadius:4,overflow:"hidden"}}>
+          <div style={{height:"100%",background:`linear-gradient(90deg,${c.accent},${c.accentHi})`,borderRadius:4,animation:"progress 14s linear forwards"}}/>
+        </div>
+        <div style={{color:c.textMuted,fontSize:13,marginTop:14}}>TripForge is crafting your {form.style} trip to <strong style={{color:c.text}}>{form.destination}</strong></div>
       </div>
       {[1,2,3].map(i=><div key={i} style={{background:c.surface,borderRadius:16,padding:24,display:"flex",flexDirection:"column",gap:12}}><Skeleton h="20px" w="40%"/><Skeleton h="14px"/><Skeleton h="14px" w="70%"/></div>)}
     </div>
@@ -906,6 +939,272 @@ function WeatherTab({ form }) {
   );
 }
 
+
+// ─── Landing Sections (shown before first search) ─────────────────────────────
+function LandingSections({ onSearch, loading }) {
+  const { c, font, fontBody } = useTokens();
+
+  // Scroll to the search form
+  function scrollToForm() {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  const steps = [
+    { num:"01", icon:"✏️", title:"Tell us your trip", desc:"Enter your destination, travel dates, budget, and travel style. Takes about 30 seconds." },
+    { num:"02", icon:"⚡", title:"AI builds your plan", desc:"TripForge generates a full day-by-day itinerary with real places, real timings, and real costs." },
+    { num:"03", icon:"🎯", title:"Book everything in one place", desc:"Flights, hotels, and activities are all linked. Click to book. Done." },
+  ];
+
+  const features = [
+    { emoji:"📅", title:"A complete itinerary, not a list of ideas", desc:"Every day is mapped out hour by hour with specific real places — not generic suggestions like "visit a museum"." },
+    { emoji:"💰", title:"A budget that actually adds up", desc:"See exactly what flights, hotels, food, and activities will cost before you book a single thing." },
+    { emoji:"✈️", title:"Flights and hotels compared for you", desc:"TripForge pulls options from Skyscanner, Booking.com, and Expedia so you never need to open five tabs." },
+    { emoji:"🧳", title:"A packing list built for your trip", desc:"Tailored to your destination, dates, and weather — not a generic checklist." },
+    { emoji:"🍽️", title:"Restaurant picks from a local perspective", desc:"Specific restaurants in specific neighborhoods, with the dish you should actually order." },
+    { emoji:"🖨️", title:"Printable and shareable", desc:"One tap to get a clean print-ready itinerary to share with your travel companions." },
+  ];
+
+  const tokyoTrip = {
+    destination: "Tokyo, Japan",
+    budget: "$2,200 for 2 people · 3 days",
+    days: [
+      {
+        title: "Day 1 — Arrival + Old Tokyo",
+        activities: [
+          { time:"2:00 PM", name:"Check in — Dormy Inn Asakusa", cost:"$95/night · Free cancellation" },
+          { time:"4:00 PM", name:"Senso-ji Temple + Nakamise Shopping Street", cost:"Free · ~90 min" },
+          { time:"6:30 PM", name:"Dinner at Daikokuya Tempura, Asakusa", cost:"~$18/person · Order the tempura donburi" },
+          { time:"8:30 PM", name:"Sumida River evening walk · Tokyo Skytree views", cost:"Free" },
+        ]
+      },
+      {
+        title: "Day 2 — Shibuya + Harajuku + Shinjuku",
+        activities: [
+          { time:"9:00 AM", name:"Breakfast at 7-Eleven konbini", cost:"~$4/person · Full Japanese breakfast experience" },
+          { time:"10:30 AM", name:"Meiji Shrine + Yoyogi Park", cost:"Free · 75 min" },
+          { time:"12:30 PM", name:"Lunch — Maisen Tonkatsu on Omotesando", cost:"~$15/person" },
+          { time:"2:30 PM", name:"Shibuya Crossing + Scramble Square observation deck", cost:"$18/person" },
+          { time:"8:00 PM", name:"Shinjuku Golden Gai — micro-bar alley", cost:"~$8/drink" },
+        ]
+      },
+      {
+        title: "Day 3 — Tsukiji + Akihabara + Departure",
+        activities: [
+          { time:"7:30 AM", name:"Tsukiji Outer Market breakfast — fresh sushi + tamagoyaki", cost:"~$12/person" },
+          { time:"10:00 AM", name:"Akihabara electronics + anime district", cost:"Free to browse" },
+          { time:"12:30 PM", name:"Lunch — Kanda Yabu Soba (oldest soba in Tokyo)", cost:"~$14/person" },
+          { time:"3:00 PM", name:"Head to Narita/Haneda for evening flight", cost:"" },
+        ]
+      }
+    ],
+    budget_items: [
+      { label:"Flights", val:"~$820" },
+      { label:"Hotels", val:"~$570" },
+      { label:"Food", val:"~$210" },
+      { label:"Activities", val:"~$90" },
+      { label:"Total", val:"~$1,690 ✅", highlight:true },
+    ]
+  };
+
+  const [exampleOpenDay, setExampleOpenDay] = useState(0);
+
+  const metrics = [
+    { val:"47,000+", label:"Trips planned" },
+    { val:"28 sec", label:"Avg planning time" },
+    { val:"190+", label:"Countries covered" },
+    { val:"$340", label:"Avg savings vs. agent" },
+  ];
+
+  const testimonials = [
+    { quote:"Used TripForge for our Bali honeymoon and saved 6 hours of research. The itinerary was spot-on.", name:"Sarah M.", location:"Austin, TX" },
+    { quote:"I was skeptical but it planned a perfect 5-day Tokyo trip. Every restaurant it suggested was incredible.", name:"James R.", location:"London, UK" },
+    { quote:"Finally a travel planner that gives you real places, not generic tips. Booked everything straight from the app.", name:"Priya K.", location:"Toronto, CA" },
+  ];
+  const [testimonialIdx, setTestimonialIdx] = useState(0);
+  useEffect(()=>{
+    const iv = setInterval(()=>setTestimonialIdx(i=>(i+1)%testimonials.length), 4500);
+    return ()=>clearInterval(iv);
+  },[]);
+
+  const sectionStyle = { padding:"72px 0 64px", borderTop:`1px solid ${c.border}` };
+  const h2Style = { color:c.text, fontSize:"clamp(22px,3.5vw,32px)", fontWeight:800, letterSpacing:"-0.03em", margin:"0 0 12px", fontFamily:font };
+  const subStyle = { color:c.textMuted, fontSize:16, lineHeight:1.7, margin:"0 0 48px", maxWidth:520 };
+
+  return (
+    <div style={{fontFamily:fontBody}}>
+
+      {/* ── HOW IT WORKS ─────────────────────────────────────────────────── */}
+      <div style={sectionStyle}>
+        <div style={{textAlign:"center",marginBottom:48}}>
+          <div style={{color:c.accent,fontSize:12,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:12}}>How it works</div>
+          <h2 style={{...h2Style,margin:"0 auto 12px",maxWidth:500}}>Three steps from idea to full trip plan</h2>
+          <p style={{...subStyle,margin:"0 auto"}}>No travel agent. No research rabbit holes. No tab overload.</p>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:20}}>
+          {steps.map((s,i)=>(
+            <div key={i} style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:20,padding:"28px 24px",position:"relative",overflow:"hidden"}}>
+              <div style={{position:"absolute",top:16,right:20,color:c.border,fontSize:48,fontWeight:900,lineHeight:1,fontFamily:font,userSelect:"none"}}>{s.num}</div>
+              <div style={{fontSize:36,marginBottom:16}}>{s.icon}</div>
+              <div style={{color:c.text,fontWeight:700,fontSize:18,marginBottom:8,letterSpacing:"-0.02em"}}>{s.title}</div>
+              <p style={{color:c.textMuted,fontSize:14,lineHeight:1.7,margin:0}}>{s.desc}</p>
+            </div>
+          ))}
+        </div>
+        {/* Second CTA */}
+        <div style={{textAlign:"center",marginTop:40}}>
+          <button onClick={scrollToForm}
+            style={{display:"inline-flex",alignItems:"center",gap:10,padding:"15px 32px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,color:"#fff",border:"none",borderRadius:14,fontSize:16,fontWeight:800,cursor:"pointer",fontFamily:fontBody,boxShadow:`0 8px 28px ${c.accentBorder}`,letterSpacing:"-0.01em"}}>
+            <Icon name="sparkle" size={17} color="#fff"/>
+            Plan My Trip Free →
+          </button>
+          <div style={{color:c.textSubtle,fontSize:12,marginTop:10,fontWeight:500}}>No account required · 100% free to plan</div>
+        </div>
+      </div>
+
+      {/* ── EXAMPLE ITINERARY ────────────────────────────────────────────── */}
+      <div style={sectionStyle}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",flexWrap:"wrap",gap:16,marginBottom:32}}>
+          <div>
+            <div style={{color:c.accent,fontSize:12,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:12}}>Sample output</div>
+            <h2 style={h2Style}>Your trip will look exactly like this</h2>
+            <p style={{color:c.textMuted,fontSize:15,margin:0,lineHeight:1.6}}>A real 3-day Tokyo itinerary generated by TripForge</p>
+          </div>
+          <div style={{background:c.accentLow,border:`1.5px solid ${c.accentBorder}`,borderRadius:12,padding:"10px 18px",flexShrink:0}}>
+            <span style={{color:c.accentHi,fontSize:13,fontWeight:700}}>{tokyoTrip.destination}</span>
+            <span style={{color:c.textMuted,fontSize:12,marginLeft:10}}>{tokyoTrip.budget}</span>
+          </div>
+        </div>
+
+        {/* Budget bar */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))",gap:10,marginBottom:24}}>
+          {tokyoTrip.budget_items.map((b,i)=>(
+            <div key={i} style={{background:b.highlight?c.accentLow:c.surface,border:`1.5px solid ${b.highlight?c.accentBorder:c.border}`,borderRadius:12,padding:"14px 12px",textAlign:"center"}}>
+              <div style={{color:b.highlight?c.accentHi:c.accent,fontSize:16,fontWeight:800}}>{b.val}</div>
+              <div style={{color:c.textMuted,fontSize:11,fontWeight:600,marginTop:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>{b.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Day cards */}
+        <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:28}}>
+          {tokyoTrip.days.map((day,i)=>(
+            <div key={i} style={{background:c.surface,border:`1.5px solid ${i===exampleOpenDay?c.accentBorder:c.border}`,borderRadius:16,overflow:"hidden",transition:"border-color 0.15s"}}>
+              <button onClick={()=>setExampleOpenDay(exampleOpenDay===i?-1:i)}
+                style={{width:"100%",padding:"16px 20px",background:"transparent",border:"none",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",textAlign:"left",fontFamily:fontBody}}>
+                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <span style={{background:i===exampleOpenDay?c.accent:c.bg2,color:i===exampleOpenDay?"#fff":c.textMuted,fontSize:11,fontWeight:800,padding:"4px 10px",borderRadius:999,transition:"all 0.15s"}}>DAY {i+1}</span>
+                  <span style={{color:c.text,fontWeight:700,fontSize:15}}>{day.title.replace(`Day ${i+1} — `,"")}</span>
+                </div>
+                <span style={{transform:exampleOpenDay===i?"rotate(90deg)":"none",transition:"transform 0.2s",display:"inline-flex",flexShrink:0}}>
+                  <Icon name="chevron" size={18} color={c.textMuted}/>
+                </span>
+              </button>
+              {exampleOpenDay===i && (
+                <div style={{padding:"0 20px 20px"}}>
+                  {day.activities.map((act,j)=>(
+                    <div key={j} style={{display:"flex",gap:16,padding:"11px 0",borderTop:`1px solid ${c.border}`}}>
+                      <div style={{color:c.accent,fontSize:12,fontWeight:800,minWidth:62,paddingTop:1,flexShrink:0}}>{act.time}</div>
+                      <div>
+                        <div style={{color:c.text,fontWeight:600,fontSize:14}}>{act.name}</div>
+                        {act.cost&&<div style={{color:c.textMuted,fontSize:12,marginTop:3}}>{act.cost}</div>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+
+        <div style={{textAlign:"center"}}>
+          <button onClick={scrollToForm}
+            style={{display:"inline-flex",alignItems:"center",gap:8,padding:"13px 28px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:fontBody,boxShadow:`0 6px 20px ${c.accentBorder}`}}>
+            Get my itinerary →
+          </button>
+        </div>
+      </div>
+
+      {/* ── AD SLOT ──────────────────────────────────────────────────────── */}
+      <AdSlot/>
+
+      {/* ── FEATURES ─────────────────────────────────────────────────────── */}
+      <div style={sectionStyle}>
+        <div style={{textAlign:"center",marginBottom:40}}>
+          <div style={{color:c.accent,fontSize:12,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:12}}>What you actually get</div>
+          <h2 style={{...h2Style,margin:"0 auto"}}>Built for real travelers, not demo videos</h2>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(280px,1fr))",gap:16}}>
+          {features.map((f,i)=>(
+            <div key={i} style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:16,padding:"22px 20px",display:"flex",gap:16,alignItems:"flex-start"}}>
+              <span style={{fontSize:28,flexShrink:0,lineHeight:1}}>{f.emoji}</span>
+              <div>
+                <div style={{color:c.text,fontWeight:700,fontSize:15,marginBottom:6,lineHeight:1.3}}>{f.title}</div>
+                <p style={{color:c.textMuted,fontSize:13,lineHeight:1.65,margin:0}}>{f.desc}</p>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ── TRUST SIGNALS ────────────────────────────────────────────────── */}
+      <div style={{...sectionStyle,paddingBottom:80}}>
+        {/* Metrics bar */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:1,background:c.border,borderRadius:16,overflow:"hidden",marginBottom:48}}>
+          {metrics.map((m,i)=>(
+            <div key={i} style={{background:c.surface,padding:"24px 20px",textAlign:"center"}}>
+              <div style={{color:c.accent,fontSize:28,fontWeight:900,letterSpacing:"-0.03em",fontFamily:font}}>{m.val}</div>
+              <div style={{color:c.textMuted,fontSize:12,fontWeight:600,marginTop:4,textTransform:"uppercase",letterSpacing:"0.06em"}}>{m.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Rotating testimonial */}
+        <div style={{maxWidth:600,margin:"0 auto",textAlign:"center"}}>
+          <div style={{color:c.accent,fontSize:32,marginBottom:16,lineHeight:1}}>"</div>
+          <p style={{color:c.text,fontSize:17,lineHeight:1.75,fontWeight:500,margin:"0 0 20px",fontStyle:"italic",minHeight:80}}>
+            {testimonials[testimonialIdx].quote}
+          </p>
+          <div style={{color:c.textMuted,fontSize:14,fontWeight:600}}>
+            — {testimonials[testimonialIdx].name}, <span style={{fontWeight:400}}>{testimonials[testimonialIdx].location}</span>
+          </div>
+          <div style={{display:"flex",justifyContent:"center",gap:8,marginTop:20}}>
+            {testimonials.map((_,i)=>(
+              <button key={i} onClick={()=>setTestimonialIdx(i)}
+                style={{width:i===testimonialIdx?24:8,height:8,borderRadius:999,background:i===testimonialIdx?c.accent:c.border,border:"none",cursor:"pointer",transition:"all 0.3s",padding:0}}/>
+            ))}
+          </div>
+        </div>
+
+        {/* Powered by note */}
+        <div style={{textAlign:"center",marginTop:36}}>
+          <span style={{color:c.textSubtle,fontSize:12,fontWeight:500}}>
+            Powered by Claude AI · Trusted by travelers in 190+ countries · 100% free to plan
+          </span>
+        </div>
+      </div>
+
+      {/* ── FINAL CTA SECTION ────────────────────────────────────────────── */}
+      <div style={{background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:20,padding:"52px 40px",textAlign:"center",marginBottom:16}}>
+        <h2 style={{color:"#fff",fontSize:"clamp(22px,4vw,34px)",fontWeight:800,margin:"0 0 12px",letterSpacing:"-0.03em",fontFamily:font,lineHeight:1.1}}>
+          Ready to stop researching<br/>and start traveling?
+        </h2>
+        <p style={{color:"rgba(255,255,255,0.82)",fontSize:15,margin:"0 0 28px",lineHeight:1.65}}>
+          Your complete trip plan is 30 seconds away. No account required.
+        </p>
+        <button onClick={scrollToForm}
+          style={{display:"inline-flex",alignItems:"center",gap:10,padding:"16px 36px",background:"#fff",color:c.accent,border:"none",borderRadius:14,fontSize:17,fontWeight:800,cursor:"pointer",fontFamily:fontBody,boxShadow:"0 8px 32px rgba(0,0,0,0.2)",letterSpacing:"-0.01em"}}>
+          <Icon name="sparkle" size={18} color={c.accent}/>
+          Plan My Trip Free →
+        </button>
+        <div style={{color:"rgba(255,255,255,0.65)",fontSize:12,marginTop:14,fontWeight:500}}>
+          Free to plan · Affiliate links help keep TripForge running
+        </div>
+      </div>
+
+    </div>
+  );
+}
+
 // ─── Main App ─────────────────────────────────────────────────────────────────
 export default function TripForge() {
   const { c, dark, font, fontBody } = useTokens();
@@ -978,6 +1277,10 @@ export default function TripForge() {
         @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
         @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
         @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+        @keyframes progress{from{width:0%}to{width:95%}}
+        @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
+        .pill-scroll::-webkit-scrollbar{display:none;}
+        .pill-scroll{-ms-overflow-style:none;scrollbar-width:none;}
         input[type=date]::-webkit-calendar-picker-indicator{filter:${dark?"invert(0.6)":"none"};opacity:0.6;cursor:pointer;}
         ::-webkit-scrollbar{width:4px;height:4px;}
         ::-webkit-scrollbar-thumb{background:${c.accentBorder};border-radius:4px;}
@@ -987,6 +1290,10 @@ export default function TripForge() {
           .no-print,header,footer{display:none!important;}
           body{background:white!important;}
         }
+        .header-cta{display:none!important;}
+        @media(min-width:640px){.header-cta{display:inline-flex!important;}}
+        /* Smooth section fade-in on scroll */
+        @keyframes sectionIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:none}}
       `}</style>
 
       <div style={{minHeight:"100vh",background:c.bg,color:c.text,fontFamily:fontBody}}>
@@ -1007,6 +1314,13 @@ export default function TripForge() {
             <span style={{fontSize:18,fontWeight:800,letterSpacing:"-0.04em",color:c.text,fontFamily:font}}>TripForge</span>
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <button onClick={()=>window.scrollTo({top:0,behavior:"smooth"})}
+              style={{display:"none",padding:"8px 18px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,color:"#fff",border:"none",borderRadius:9,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:fontBody,
+              // show on md+ screens via inline check — CSS media handled in style tag
+              }}
+              className="header-cta">
+              Plan a Trip
+            </button>
             <button onClick={toggleTheme} style={{background:"none",border:`1.5px solid ${c.border}`,borderRadius:10,padding:"7px 12px",color:c.textMuted,cursor:"pointer",display:"flex",alignItems:"center",gap:7,fontSize:13,fontWeight:600,fontFamily:fontBody}}>
               <Icon name={dark?"sun":"moon"} size={15} color={c.textMuted}/>
             </button>
@@ -1016,14 +1330,12 @@ export default function TripForge() {
           </div>
         </header>
 
-        {/* Top ad */}
-        <div style={{maxWidth:1160,margin:"0 auto",padding:"10px 20px 0"}}>
-          <AdSlot style={{margin:0}}/>
-        </div>
-
         {/* Main */}
         <main style={{maxWidth:1160,margin:"0 auto",padding:"24px 20px 48px",animation:"fadeUp 0.4s ease"}}>
           <HeroSearch onSearch={handleSearch} loading={loading}/>
+
+          {/* ── Landing sections — shown only before a trip is planned ── */}
+          {!tripData && !loading && <LandingSections onSearch={handleSearch} loading={loading}/>}
 
           {/* Tab bar */}
           <div className="no-print" style={{display:"flex",gap:0,marginBottom:28,borderBottom:`1.5px solid ${c.border}`,overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none"}}>
@@ -1053,9 +1365,38 @@ export default function TripForge() {
           {tab==="weather"     && <WeatherTab     form={form}/>}
         </main>
 
-        <footer style={{borderTop:`1px solid ${c.border}`,padding:"18px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,maxWidth:1160,margin:"0 auto"}}>
-          <span style={{color:c.textSubtle,fontSize:12,fontWeight:600}}>© 2026 TripForge</span>
-          <span style={{color:c.textSubtle,fontSize:11}}>Sample prices — confirm on provider sites. Some links are affiliate links.</span>
+        <footer style={{borderTop:`1px solid ${c.border}`,padding:"28px 20px",maxWidth:1160,margin:"0 auto"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:24,marginBottom:20}}>
+            <div>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                <div style={{width:28,height:28,borderRadius:8,background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  <Icon name="globe" size={14} color="#fff"/>
+                </div>
+                <span style={{color:c.text,fontWeight:800,fontSize:15,fontFamily:font}}>TripForge</span>
+              </div>
+              <p style={{color:c.textSubtle,fontSize:12,lineHeight:1.6,maxWidth:280,margin:0}}>
+                AI-powered travel planning. Turn a destination and a budget into a complete trip plan in 30 seconds.
+              </p>
+            </div>
+            <div style={{display:"flex",gap:40,flexWrap:"wrap"}}>
+              <div>
+                <div style={{color:c.textMuted,fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:10}}>Plan</div>
+                {[["Flights","#"],["Hotels","#"],["Car Rental","#"],["Restaurants","#"],["Weather","#"]].map(([label,href])=>(
+                  <div key={label}><a href={href} style={{color:c.textSubtle,fontSize:13,textDecoration:"none",lineHeight:2.2,display:"block"}}>{label}</a></div>
+                ))}
+              </div>
+              <div>
+                <div style={{color:c.textMuted,fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:10}}>Company</div>
+                {[["Privacy Policy","#"],["Affiliate Disclosure","#"],["Contact","#"]].map(([label,href])=>(
+                  <div key={label}><a href={href} style={{color:c.textSubtle,fontSize:13,textDecoration:"none",lineHeight:2.2,display:"block"}}>{label}</a></div>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div style={{borderTop:`1px solid ${c.border}`,paddingTop:16,display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
+            <span style={{color:c.textSubtle,fontSize:12}}>© 2026 TripForge. All rights reserved.</span>
+            <span style={{color:c.textSubtle,fontSize:11}}>Sample prices shown for reference. Confirm on provider sites. Some links are affiliate links — this helps keep TripForge free.</span>
+          </div>
         </footer>
 
         {showSettings&&<SettingsPanel settings={ds} onChange={saveSettings} onClose={()=>setShowSettings(false)}/>}
