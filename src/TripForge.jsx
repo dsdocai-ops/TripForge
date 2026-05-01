@@ -956,7 +956,7 @@ function LandingSections({ onSearch, loading }) {
   ];
 
   const features = [
-    { emoji:"📅", title:"A complete itinerary, not a list of ideas", desc:"Every day is mapped out hour by hour with specific real places — not generic suggestions like "visit a museum"." },
+    { emoji:"📅", title:"A complete itinerary, not a list of ideas", desc:"Every day is mapped out hour by hour with specific real places — not generic suggestions like 'visit a museum'." },
     { emoji:"💰", title:"A budget that actually adds up", desc:"See exactly what flights, hotels, food, and activities will cost before you book a single thing." },
     { emoji:"✈️", title:"Flights and hotels compared for you", desc:"TripForge pulls options from Skyscanner, Booking.com, and Expedia so you never need to open five tabs." },
     { emoji:"🧳", title:"A packing list built for your trip", desc:"Tailored to your destination, dates, and weather — not a generic checklist." },
