@@ -7,7 +7,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "node fix-quotes.js && vite build"
+    "build": "node fix-quotes.js && vite build",
     "preview": "vite preview"
   },
   "devDependencies": {
