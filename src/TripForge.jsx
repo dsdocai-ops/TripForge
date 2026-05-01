@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback, useRef } from "react";
 const CLAUDE_MODEL = "claude-haiku-4-5-20251001";
 
 // ─── YOUR API KEY — see implementation note at bottom of file ────────────────
-const SITE_API_KEY = "YOUR_ANTHROPIC_API_KEY_HERE";
+const SITE_API_KEY = "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";
 
 // ─── Affiliate links ─────────────────────────────────────────────────────────
 const AFF = {
