@@ -345,8 +345,8 @@ style={{padding:“8px 16px”,borderRadius:9,border:“1.5px solid”,borderCol
         {dests.map((d,i)=>(
           <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:10,marginBottom:10,alignItems:"center"}}>
             <Field icon="pin" value={d.city} onChange={e=>upd(i,"city",e.target.value)} placeholder={`Stop ${i+1} — city`}/>
-            <Field icon="calendar" value={d.dateFrom} onChange={e=>upd(i,"dateFrom",e.target.value)} type="date" placeholder="Arrive"/>
-            <Field icon="calendar" value={d.dateTo} onChange={e=>upd(i,"dateTo",e.target.value)} type="date" placeholder="Depart"/>
+            <Field icon="calendar" value={d.dateFrom} onChange={e=>upd(i,"dateFrom",e.target.value)} type="date" placeholder="Arrive at stop"/>
+            <Field icon="calendar" value={d.dateTo} onChange={e=>upd(i,"dateTo",e.target.value)} type="date" placeholder="Leave stop"/>
             {dests.length>2
               ? <button onClick={()=>setDests(d=>d.filter((_,j)=>j!==i))} style={{background:"none",border:"none",cursor:"pointer",padding:6,borderRadius:8}}><Icon name="trash" size={16} color={c.danger}/></button>
               : <div/>}
@@ -359,8 +359,8 @@ style={{padding:“8px 16px”,borderRadius:9,border:“1.5px solid”,borderCol
     ) : (
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:12,marginBottom:16}}>
         <Field icon="pin" value={dests[0]?.city} onChange={e=>upd(0,"city",e.target.value)} placeholder="Where to? Paris, Tokyo, Bali…"/>
-        <Field icon="calendar" value={dests[0]?.dateFrom} onChange={e=>upd(0,"dateFrom",e.target.value)} type="date" placeholder="Depart date"/>
-        <Field icon="calendar" value={dests[0]?.dateTo} onChange={e=>upd(0,"dateTo",e.target.value)} type="date" placeholder="Return date"/>
+        <Field icon="calendar" value={dests[0]?.dateFrom} onChange={e=>upd(0,"dateFrom",e.target.value)} type="date" placeholder="✈️ Fly out date"/>
+        <Field icon="calendar" value={dests[0]?.dateTo} onChange={e=>upd(0,"dateTo",e.target.value)} type="date" placeholder="🏠 Return date"/>
       </div>
     )}
 
