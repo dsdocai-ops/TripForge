@@ -1,507 +1,451 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 
-const CLAUDE_MODEL = "claude-sonnet-4-20250514";
+// ─── Model ────────────────────────────────────────────────────────────────────
+const CLAUDE_MODEL = "claude-haiku-4-5-20251001";
 
-/**
- * Design system — fonts & colors (all formats used in this file)
- *
- * Fonts
- * - Plus Jakarta Sans (Google Fonts): weights 400, 500, 600, 700 — UI + headings
- * - ui-monospace stack — API key fields only
- *
- * Colors (hex #RRGGBB unless noted)
- * - bg #0b0c0f, bg2 #0f1117, elevated #12151c, surface #171a22, surfaceHover #1e222c
- * - text #e8eaef, textMuted #9aa3b2, textSubtle #5c6473
- * - accent #2dd4bf, accentHi #5eead4, accentLow rgba(45,212,191,0.12), accentBorder rgba(45,212,191,0.35)
- * - border rgba(255,255,255,0.07), borderStrong rgba(255,255,255,0.12)
- * - success #4ade80, danger #fb7185, info #38bdf8
- * - overlay rgba(6,8,12,0.92)
- * - header scrim rgba(11,12,15,0.82)
- * - rating pill rgba(74, 222, 128, 0.14)
- * - scrollbar thumb rgba(45, 212, 191, 0.25)
- *
- * Raster images (https JPEG, Unsplash CDN) — use unsplashPhoto() for fm=jpg + crop
- * - Flights (per airline): see AIRLINE_AIRCRAFT_IMG
- * - Hotels: photo-1566073771259-6a8506099945, photo-1618773928121-c32242e63f39,
- *   photo-1520250497591-112f2f40a3f4, photo-1590490360182-c33d57733427
- * - Cars: photo-1449965408869-eaa3f722e40d, photo-1519641471654-76ce0107ad1b,
- *   photo-1494976388531-d0858494cdd9, photo-1555215695-3004980ad54e
- */
-const TF = {
-  fontSans: `"Plus Jakarta Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`,
-  fontMono: `ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace`,
-  c: {
-    bg: "#0b0c0f",
-    bg2: "#0f1117",
-    elevated: "#12151c",
-    surface: "#171a22",
-    surfaceHover: "#1e222c",
-    border: "rgba(255,255,255,0.07)",
-    borderStrong: "rgba(255,255,255,0.12)",
-    text: "#e8eaef",
-    textMuted: "#9aa3b2",
-    textSubtle: "#5c6473",
-    accent: "#2dd4bf",
-    accentHi: "#5eead4",
-    accentLow: "rgba(45,212,191,0.12)",
-    accentBorder: "rgba(45,212,191,0.35)",
-    onAccent: "#061312",
-    success: "#4ade80",
-    danger: "#fb7185",
-    info: "#38bdf8",
-    overlay: "rgba(6,8,12,0.92)",
-  },
+// ─── Affiliate links ─────────────────────────────────────────────────────────
+const AFF = {
+  skyscanner: (from, to, date) =>
+    `https://www.skyscanner.com/transport/flights/${encodeURIComponent(from||"")}/${encodeURIComponent(to||"")}/${date?.replace(/-/g,"")||""}/?utm_source=YOURAFFID`,
+  bookingHotels: (dest) =>
+    `https://www.booking.com/search.html?ss=${encodeURIComponent(dest||"")}&aid=YOURAFFID`,
+  expediaHotels: (dest) =>
+    `https://www.expedia.com/Hotels-Search?destination=${encodeURIComponent(dest||"")}&affcid=YOURAFFID`,
+  expediaFlights: (from, to) =>
+    `https://www.expedia.com/Flights-Search?flight-type=on&mode=search&trip=oneway&leg1=from:${encodeURIComponent(from||"")},to:${encodeURIComponent(to||"")}&affcid=YOURAFFID`,
+  kayakCars: (dest) =>
+    `https://www.kayak.com/cars/${encodeURIComponent(dest||"")}?affiliate=YOURAFFID`,
+  viator: (dest) =>
+    `https://www.viator.com/searchResults/all?text=${encodeURIComponent(dest||"")}&pid=YOURAFFID`,
+  googleFlights: (from, to) =>
+    `https://www.google.com/travel/flights?q=flights+from+${encodeURIComponent(from||"")}+to+${encodeURIComponent(to||"")}`,
 };
 
-// ── Utility ──────────────────────────────────────────────────────────────────
-
-async function askClaude(systemPrompt, userPrompt, apiKey) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01",
-      "anthropic-dangerous-direct-browser-access": "true",
-    },
-    body: JSON.stringify({
-      model: CLAUDE_MODEL,
-      max_tokens: 4000,
-      system: systemPrompt,
-      messages: [{ role: "user", content: userPrompt }],
-    }),
-  });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.error?.message || "Claude API error");
-  }
-  const data = await res.json();
-  return data.content.map((b) => b.text || "").join("");
-}
-
-function parseJSON(raw) {
-  const clean = raw.replace(/```json|```/g, "").trim();
-  const start = clean.indexOf("{") !== -1 ? clean.indexOf("{") : clean.indexOf("[");
-  const end = Math.max(clean.lastIndexOf("}"), clean.lastIndexOf("]"));
-  return JSON.parse(clean.slice(start, end + 1));
-}
-
-/** Unsplash: explicit jpg + crop improves compatibility vs default negotiation */
-function unsplashPhoto(id, w, h) {
-  return `https://images.unsplash.com/${id}?auto=format&fit=crop&w=${w}&h=${h}&q=82&fm=jpg`;
-}
-
-const AIRLINE_AIRCRAFT_IMG = {
-  "Delta Airlines": unsplashPhoto("photo-1569154941061-e231b4725ef1", 960, 640),
-  "American Airlines": unsplashPhoto("photo-1436491865332-7a61a109cc05", 960, 640),
-  "United Airlines": unsplashPhoto("photo-1540962357608-b2e3bba36c18", 960, 640),
-  "Lufthansa": unsplashPhoto("photo-1570145007675-901791fe9fdb", 960, 640),
+// ─── Real aircraft photos ─────────────────────────────────────────────────────
+const AIRLINE_PHOTOS = {
+  "Delta Airlines":    "https://images.unsplash.com/photo-1569154941061-e231b4725ef1?auto=format&fit=crop&w=900&h=480&q=85",
+  "American Airlines": "https://images.unsplash.com/photo-1436491865332-7a61a109cc05?auto=format&fit=crop&w=900&h=480&q=85",
+  "United Airlines":   "https://images.unsplash.com/photo-1540962357608-b2e3bba36c18?auto=format&fit=crop&w=900&h=480&q=85",
+  "Lufthansa":         "https://images.unsplash.com/photo-1570145007675-901791fe9fdb?auto=format&fit=crop&w=900&h=480&q=85",
+  "_fallback":         "https://images.unsplash.com/photo-1464037866556-abfb2b3b75a3?auto=format&fit=crop&w=900&h=480&q=85",
 };
 
-function airlineAircraftImage(airline) {
-  return AIRLINE_AIRCRAFT_IMG[airline] || unsplashPhoto("photo-1464037866556-abfb2b3b75a3", 960, 640);
-}
+// ─── Real specific car model photos ──────────────────────────────────────────
+const CAR_PHOTOS = {
+  "Toyota Yaris":  "https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=800&h=480&q=85",
+  "Nissan Rogue":  "https://images.unsplash.com/photo-1519641471654-76ce0107ad1b?auto=format&fit=crop&w=800&h=480&q=85",
+  "Toyota Camry":  "https://images.unsplash.com/photo-1494976388531-d0858494cdd9?auto=format&fit=crop&w=800&h=480&q=85",
+  "BMW 5 Series":  "https://images.unsplash.com/photo-1555215695-3004980ad54e?auto=format&fit=crop&w=800&h=480&q=85",
+  "_fallback":     "https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?auto=format&fit=crop&w=800&h=480&q=85",
+};
 
-// ── Icon system (inline SVG as <img/>) ─────────────────────────────────────────
-function svgToDataUri(svg) {
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
-}
+// ─── Real hotel photos ────────────────────────────────────────────────────────
+const HOTEL_PHOTOS = [
+  "https://images.unsplash.com/photo-1542314831-068cd1dbfeeb?auto=format&fit=crop&w=900&h=500&q=85",
+  "https://images.unsplash.com/photo-1571003123894-1f0594d2b5d9?auto=format&fit=crop&w=900&h=500&q=85",
+  "https://images.unsplash.com/photo-1578683010236-d716f9a3f461?auto=format&fit=crop&w=900&h=500&q=85",
+  "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=900&h=500&q=85",
+];
 
-const ImgIcon = ({ name, size = 20, color = TF.c.textMuted, title }) => {
-  const stroke = color;
-  const fill = color;
-
-  const icons = {
-    plane: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21 4 19.5 2.5S18 2 16.5 3.5L13 7 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>`,
-    hotel: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><path d="M9 22V12h6v10"/></svg>`,
-    car: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16V6a2 2 0 012-2h11a2 2 0 012 2v10"/><path d="M3 12h17"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/></svg>`,
-    map: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l-6 3V6l6-3 6 3 6-3v15l-6 3-6-3z"/><path d="M9 3v15"/><path d="M15 6v15"/></svg>`,
-    sun: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="M4.93 4.93l1.41 1.41"/><path d="M17.66 17.66l1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="M4.93 19.07l1.41-1.41"/><path d="M17.66 6.34l1.41-1.41"/></svg>`,
-    cloud: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z"/></svg>`,
-    calendar: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v4"/><path d="M16 2v4"/><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M3 10h18"/></svg>`,
-    pin: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 21s6-4.35 6-10a6 6 0 10-12 0c0 5.65 6 10 6 10z"/><circle cx="12" cy="11" r="2"/></svg>`,
-    home: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5V21a1 1 0 01-1 1h-5v-7H9v7H4a1 1 0 01-1-1z"/></svg>`,
-    users: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>`,
-    dollar: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1v22"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>`,
-    target: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>`,
-    spark: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="${fill}"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/></svg>`,
-    settings: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>`,
-    x: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18"/><path d="M6 6l12 12"/></svg>`,
-    check: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>`,
-    info: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>`,
-
-    // Hotel amenities / small glyphs
-    wifi: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.55a11 11 0 0114 0"/><path d="M8.5 16.1a6 6 0 017 0"/><path d="M12 20h0"/></svg>`,
-    coffee: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 14h11a4 4 0 010 8H7a4 4 0 01-4-4v-4z"/><path d="M14 14h3a3 3 0 010 6h-3"/><path d="M8 2v4"/><path d="M12 2v4"/></svg>`,
-    breakfast: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19h16"/><path d="M6 19c0-7 2-12 6-12s6 5 6 12"/></svg>`,
-    pool: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 6h10"/><path d="M7 10h10"/><path d="M7 14h10"/><path d="M4 18c2 2 6 2 8 0s6-2 8 0"/></svg>`,
-    parking: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M10 7h4a3 3 0 010 6h-4v4"/></svg>`,
-    spa: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s7-4 7-10a7 7 0 10-14 0c0 6 7 10 7 10z"/><path d="M9 12c1 1 2 1 3 0s2-1 3 0"/></svg>`,
-    restaurant: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3h2v7a2 2 0 01-2 2H2V3h2z"/><path d="M6 3v7"/><path d="M14 3v9a2 2 0 01-2 2h-1"/><path d="M14 3h2a4 4 0 010 8h-2"/></svg>`,
-    bike: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="18.5" cy="17.5" r="3.5"/><path d="M5.5 17.5L9 10h4l3 7.5"/><path d="M10 6h2"/><path d="M9 10L7 6h4"/></svg>`,
-    gym: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7v10"/><path d="M18 7v10"/><path d="M8 10h8"/><path d="M8 14h8"/><rect x="2" y="9" width="3" height="6" rx="1"/><rect x="19" y="9" width="3" height="6" rx="1"/></svg>`,
-    chevron: `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${stroke}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>`,
-  };
-
-  const svg = icons[name];
-  if (!svg) return null;
+// ─── Ad Slot ──────────────────────────────────────────────────────────────────
+function AdSlot({ style={} }) {
+  const { c } = useTokens();
   return (
-    <img
-      src={svgToDataUri(svg)}
-      alt={title || name}
-      width={size}
-      height={size}
-      style={{ display: "inline-block", verticalAlign: "middle" }}
-      draggable={false}
-    />
-  );
-};
-
-// ── Icons (inline SVG as JSX) ─────────────────────────────────────────────────
-const Icon = ({ name, size = 20, color = "currentColor" }) => {
-  const icons = {
-    plane: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21 4 19.5 2.5S18 2 16.5 3.5L13 7 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>,
-    hotel: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
-    car: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>,
-    sun: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>,
-    map: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>,
-    star: <svg width={size} height={size} viewBox="0 0 24 24" fill={color} stroke={color} strokeWidth="1"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>,
-    settings: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>,
-    sparkle: <svg width={size} height={size} viewBox="0 0 24 24" fill={color}><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/></svg>,
-    x: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
-    check: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>,
-    cloud: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><path d="M18 10h-1.26A8 8 0 109 20h9a5 5 0 000-10z"/></svg>,
-    dollar: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>,
-    arrow: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>,
-    bag: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>,
-    info: <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
-  };
-  return icons[name] || null;
-};
-
-/** Remote cover with fallback (avoids broken layout when CDN blocks or URL fails) */
-function MediaCover({ src, alt = "", height, minHeight = 120, iconName = "plane" }) {
-  const [failed, setFailed] = useState(false);
-  const h = height ?? minHeight;
-  return (
-    <div
-      key={src}
-      style={{
-        position: "relative",
-        width: "100%",
-        height: height != null ? height : undefined,
-        minHeight: h,
-        background: TF.c.bg2,
-        overflow: "hidden",
-      }}
-    >
-      {failed ? (
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: `linear-gradient(160deg, ${TF.c.surface}, ${TF.c.bg2})`,
-            border: `1px solid ${TF.c.border}`,
-          }}
-        >
-          <ImgIcon name={iconName} size={iconName === "car" ? 38 : 40} color={TF.c.accent} title="" />
-        </div>
-      ) : (
-        <img
-          src={src}
-          alt={alt}
-          loading="lazy"
-          decoding="async"
-          onError={() => setFailed(true)}
-          style={{
-            position: "absolute",
-            inset: 0,
-            width: "100%",
-            height: "100%",
-            objectFit: "cover",
-            objectPosition: "center",
-            display: "block",
-          }}
-        />
-      )}
+    <div className="no-print" style={{
+      width:"100%", minHeight:72, background:c.surface,
+      border:`1px dashed ${c.border}`, borderRadius:12,
+      display:"flex", alignItems:"center", justifyContent:"center",
+      color:c.textSubtle, fontSize:11, fontWeight:700,
+      letterSpacing:"0.1em", textTransform:"uppercase", margin:"14px 0", ...style,
+    }}>
+      {/* Replace with AdSense <ins> tag */}
+      Advertisement
     </div>
   );
 }
 
-// ── Skeleton Loader ───────────────────────────────────────────────────────────
-const Skeleton = ({ h = "1rem", w = "100%", radius = "8px" }) => (
-  <div style={{
-    height: h, width: w, borderRadius: radius,
-    background: `linear-gradient(90deg, ${TF.c.surface} 25%, ${TF.c.surfaceHover} 50%, ${TF.c.surface} 75%)`,
-    backgroundSize: "200% 100%",
-    animation: "shimmer 1.5s infinite",
-  }} />
-);
+// ─── Theme ────────────────────────────────────────────────────────────────────
+let _listeners = [];
+let _theme = "light";
+function useTheme() {
+  const [t, setT] = useState(_theme);
+  useEffect(() => {
+    _listeners.push(setT);
+    return () => { _listeners = _listeners.filter(l => l !== setT); };
+  }, []);
+  const toggle = useCallback(() => {
+    _theme = _theme === "dark" ? "light" : "dark";
+    _listeners.forEach(l => l(_theme));
+  }, []);
+  return [t, toggle];
+}
 
-// ── API Key Modal ─────────────────────────────────────────────────────────────
+// ─── Design tokens ────────────────────────────────────────────────────────────
+function useTokens() {
+  const [theme] = useTheme();
+  const dark = theme === "dark";
+  return {
+    dark,
+    font: `"Sora", system-ui, sans-serif`,
+    fontBody: `"DM Sans", system-ui, sans-serif`,
+    fontMono: `"JetBrains Mono", monospace`,
+    c: dark ? {
+      bg:"#080a0f", bg2:"#0e1118", surface:"#13171f", surfaceHover:"#191e28",
+      border:"rgba(255,255,255,0.07)", borderStrong:"rgba(255,255,255,0.13)",
+      text:"#f0f2f7", textMuted:"#7c8899", textSubtle:"#3d4756",
+      accent:"#ff6b2b", accentHi:"#ff8c55", accentLow:"rgba(255,107,43,0.11)", accentBorder:"rgba(255,107,43,0.32)",
+      onAccent:"#fff", teal:"#0fd4c8", tealLow:"rgba(15,212,200,0.1)",
+      success:"#22d3a0", danger:"#ff4d6d", info:"#3b9eff", gold:"#f5c842",
+      overlay:"rgba(4,6,12,0.92)",
+    } : {
+      bg:"#faf9f7", bg2:"#f2efe9", surface:"#ffffff", surfaceHover:"#fdf9f5",
+      border:"rgba(0,0,0,0.07)", borderStrong:"rgba(0,0,0,0.14)",
+      text:"#12100e", textMuted:"#6b6258", textSubtle:"#b5ada4",
+      accent:"#e8520a", accentHi:"#ff6b2b", accentLow:"rgba(232,82,10,0.07)", accentBorder:"rgba(232,82,10,0.28)",
+      onAccent:"#fff", teal:"#0ab8ae", tealLow:"rgba(10,184,174,0.08)",
+      success:"#059669", danger:"#dc2626", info:"#1d6fb8", gold:"#d97706",
+      overlay:"rgba(18,16,14,0.72)",
+    },
+  };
+}
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
+async function askClaude(system, user, apiKey) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method:"POST",
+    headers:{ "Content-Type":"application/json", "x-api-key":apiKey, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" },
+    body:JSON.stringify({ model:CLAUDE_MODEL, max_tokens:4096, system, messages:[{role:"user",content:user}] }),
+  });
+  if (!res.ok) { const e = await res.json(); throw new Error(e.error?.message||"API error"); }
+  const d = await res.json();
+  return d.content.map(b=>b.text||"").join("");
+}
+function parseJSON(raw) {
+  let clean = raw.replace(/```json|```/g,"").trim();
+  const s = clean.indexOf("{")!==-1 ? clean.indexOf("{") : clean.indexOf("[");
+  clean = clean.slice(s);
+  // Try straight parse first
+  try { return JSON.parse(clean); } catch(_) {}
+  // Truncated mid-JSON — attempt to close open structures
+  let attempt = clean;
+  attempt = attempt.replace(/,?\s*"[^"]*$/, "");
+  attempt = attempt.replace(/,?\s*"[^"]*"\s*:\s*[^,}\]]*$/, "");
+  attempt = attempt.replace(/,\s*$/, "");
+  const opens = [];
+  for (const ch of attempt) {
+    if (ch === "{") opens.push("}");
+    else if (ch === "[") opens.push("]");
+    else if (ch === "}" || ch === "]") opens.pop();
+  }
+  attempt += opens.reverse().join("");
+  return JSON.parse(attempt);
+}
+
+// ─── Icons ────────────────────────────────────────────────────────────────────
+function Icon({ name, size=20, color="currentColor" }) {
+  const icons = {
+    plane:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5C21 6 21 4 19.5 2.5S18 2 16.5 3.5L13 7 4.8 6.2c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L9 12l-2 3H4l-1 1 3 2 2 3 1-1v-3l3-2 3.5 5.3c.3.4.8.5 1.3.3l.5-.2c.4-.3.6-.7.5-1.2z"/></svg>,
+    hotel:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
+    car:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M5 17H3a2 2 0 01-2-2V9a2 2 0 012-2h11l4 4v4a2 2 0 01-2 2h-2m-6 0h4"/><circle cx="7.5" cy="17.5" r="2.5"/><circle cx="17.5" cy="17.5" r="2.5"/></svg>,
+    map:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"/><line x1="8" y1="2" x2="8" y2="18"/><line x1="16" y1="6" x2="16" y2="22"/></svg>,
+    sun:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>,
+    moon:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>,
+    fork:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M3 2v7c0 1.1.9 2 2 2h4a2 2 0 002-2V2"/><path d="M7 2v20"/><path d="M21 15V2a5 5 0 00-5 5v6c0 .55.45 1 1 1h3c.55 0 1-.45 1-1z"/></svg>,
+    print:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>,
+    settings:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>,
+    x:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>,
+    check:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>,
+    dollar:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>,
+    bag:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 01-8 0"/></svg>,
+    pin:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21s6-4.35 6-10a6 6 0 10-12 0c0 5.65 6 10 6 10z"/><circle cx="12" cy="11" r="2"/></svg>,
+    plus:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>,
+    trash:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>,
+    info:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>,
+    sparkle:<svg width={size} height={size} viewBox="0 0 24 24" fill={color}><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/></svg>,
+    arrow:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>,
+    chevron:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>,
+    wifi:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12.55a11 11 0 0114 0"/><path d="M1.42 9a16 16 0 0121.16 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/><circle cx="12" cy="20" r="1"/></svg>,
+    pool:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M2 12h20M2 7h20M4 17c2 2 5 2 7 0s5-2 7 0"/></svg>,
+    coffee:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M18 8h1a4 4 0 010 8h-1"/><path d="M2 8h16v9a4 4 0 01-4 4H6a4 4 0 01-4-4V8z"/><line x1="6" y1="1" x2="6" y2="4"/><line x1="10" y1="1" x2="10" y2="4"/><line x1="14" y1="1" x2="14" y2="4"/></svg>,
+    gym:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M6 7v10M18 7v10M8 10h8M8 14h8"/><rect x="2" y="9" width="3" height="6" rx="1"/><rect x="19" y="9" width="3" height="6" rx="1"/></svg>,
+    users:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>,
+    globe:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>,
+    calendar:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
+  };
+  return <span style={{display:"inline-flex",alignItems:"center",flexShrink:0}}>{icons[name]||null}</span>;
+}
+
+// ─── Skeleton ─────────────────────────────────────────────────────────────────
+function Skeleton({ h="1rem", w="100%", r="10px" }) {
+  const { c } = useTokens();
+  return <div style={{height:h,width:w,borderRadius:r,background:`linear-gradient(90deg,${c.surface} 25%,${c.surfaceHover} 50%,${c.surface} 75%)`,backgroundSize:"200% 100%",animation:"shimmer 1.6s infinite"}} />;
+}
+
+// ─── Image with two-level fallback ────────────────────────────────────────────
+function Img({ src, fallbackSrc, alt="", style={}, iconName="plane" }) {
+  const { c } = useTokens();
+  const [err1, setErr1] = useState(false);
+  const [err2, setErr2] = useState(false);
+  const current = err1 ? fallbackSrc : src;
+  if (err2 || (!src && !fallbackSrc)) {
+    return (
+      <div style={{width:"100%",height:"100%",background:`linear-gradient(135deg,${c.surface},${c.bg2})`,display:"flex",alignItems:"center",justifyContent:"center",...style}}>
+        <Icon name={iconName} size={40} color={c.accentHi} />
+      </div>
+    );
+  }
+  return (
+    <img src={current} alt={alt} loading="lazy" decoding="async"
+      onError={()=>{ if (!err1) setErr1(true); else setErr2(true); }}
+      style={{width:"100%",height:"100%",objectFit:"cover",objectPosition:"center",display:"block",...style}} />
+  );
+}
+
+// ─── Button ───────────────────────────────────────────────────────────────────
+function Btn({ onClick, disabled, children, variant="primary", style={}, full=false }) {
+  const { c, fontBody } = useTokens();
+  const v = {
+    primary:{ background:`linear-gradient(135deg,${c.accent},${c.accentHi})`, color:"#fff", border:"none", boxShadow:`0 6px 20px ${c.accentBorder}` },
+    ghost:  { background:c.accentLow, color:c.accentHi, border:`1.5px solid ${c.accentBorder}` },
+    muted:  { background:c.surface, color:c.textMuted, border:`1.5px solid ${c.border}` },
+    teal:   { background:c.tealLow, color:c.teal, border:`1.5px solid rgba(15,212,200,0.3)` },
+  }[variant]||{};
+  return (
+    <button onClick={onClick} disabled={disabled} style={{
+      display:"inline-flex",alignItems:"center",justifyContent:"center",gap:8,
+      padding:"11px 22px",borderRadius:12,cursor:disabled?"not-allowed":"pointer",
+      fontSize:14,fontWeight:700,fontFamily:fontBody,transition:"opacity 0.15s, transform 0.1s",
+      opacity:disabled?0.5:1,width:full?"100%":undefined,letterSpacing:"-0.01em",
+      ...v,...style,
+    }}>{children}</button>
+  );
+}
+
+// ─── Field ────────────────────────────────────────────────────────────────────
+function Field({ icon, value, onChange, placeholder, type="text", style={} }) {
+  const { c, fontBody } = useTokens();
+  const [focused, setFocused] = useState(false);
+  return (
+    <div style={{position:"relative",...style}}>
+      {icon && <span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",zIndex:1,opacity:focused?0.9:0.5,transition:"opacity 0.15s"}}><Icon name={icon} size={15} color={c.text} /></span>}
+      <input type={type} value={value||""} onChange={onChange} placeholder={placeholder}
+        onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)}
+        style={{
+          width:"100%",padding:`13px 14px 13px ${icon?40:14}px`,
+          background:focused?c.surfaceHover:c.bg2,
+          border:`1.5px solid ${focused?c.accentBorder:c.border}`,
+          borderRadius:12,color:c.text,fontSize:14,fontFamily:fontBody,
+          outline:"none",boxSizing:"border-box",transition:"all 0.15s",
+          WebkitAppearance:"none",
+        }} />
+    </div>
+  );
+}
+
+// ─── API Key Modal ────────────────────────────────────────────────────────────
 function ApiKeyModal({ onSave }) {
   const [key, setKey] = useState("");
+  const { c, font, fontBody } = useTokens();
   return (
-    <div style={{
-      position:"fixed",inset:0,background:TF.c.overlay,display:"flex",
-      alignItems:"center",justifyContent:"center",zIndex:1000,
-      fontFamily:TF.fontSans
-    }}>
-      <div style={{
-        background:`linear-gradient(165deg, ${TF.c.elevated}, ${TF.c.surface})`,
-        border:`1px solid ${TF.c.borderStrong}`,borderRadius:"16px",
-        padding:"48px",maxWidth:"480px",width:"90%",textAlign:"center",
-        boxShadow:"0 24px 64px rgba(0,0,0,0.45)"
-      }}>
-        <div style={{display:"flex",justifyContent:"center",marginBottom:"16px"}}>
-          <div style={{width:"56px",height:"56px",borderRadius:"14px",background:TF.c.accentLow,border:`1px solid ${TF.c.accentBorder}`,display:"flex",alignItems:"center",justifyContent:"center"}}>
-            <ImgIcon name="plane" size={28} color={TF.c.accent} title="TripForge" />
-          </div>
+    <div style={{position:"fixed",inset:0,background:c.overlay,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20,fontFamily:fontBody}}>
+      <div style={{background:c.surface,border:`1.5px solid ${c.borderStrong}`,borderRadius:24,padding:"52px 40px",maxWidth:460,width:"100%",textAlign:"center",boxShadow:"0 40px 100px rgba(0,0,0,0.4)"}}>
+        <div style={{width:72,height:72,borderRadius:20,background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,margin:"0 auto 24px",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 12px 32px ${c.accentBorder}`}}>
+          <Icon name="globe" size={32} color="#fff" />
         </div>
-        <h2 style={{fontFamily:TF.fontSans,color:TF.c.text,fontSize:"26px",fontWeight:700,margin:"0 0 12px",letterSpacing:"-0.02em"}}>
-          Welcome to TripForge
-        </h2>
-        <p style={{color:TF.c.textMuted,fontSize:"14px",lineHeight:"1.6",margin:"0 0 32px"}}>
-          Enter your Anthropic API key for itineraries, packing lists, and budget ideas. Your key stays in this browser only.
-        </p>
-        <input
-          value={key}
-          onChange={e => setKey(e.target.value)}
-          placeholder="sk-ant-api03-..."
-          type="password"
-          style={{
-            width:"100%",padding:"14px 18px",borderRadius:"10px",
-            background:TF.c.bg2,border:`1px solid ${TF.c.borderStrong}`,
-            color:TF.c.text,fontSize:"14px",outline:"none",boxSizing:"border-box",
-            fontFamily:TF.fontMono,marginBottom:"16px"
-          }}
-        />
-        <button
-          onClick={() => key.trim() && onSave(key.trim())}
-          style={{
-            width:"100%",padding:"14px",borderRadius:"10px",border:"none",
-            background:`linear-gradient(135deg, ${TF.c.accent}, ${TF.c.accentHi})`,
-            color:TF.c.onAccent,fontWeight:700,fontSize:"15px",cursor:"pointer",
-            fontFamily:TF.fontSans,letterSpacing:"0.02em"
-          }}
-        >
-          Continue
-        </button>
-        <p style={{color:TF.c.textSubtle,fontSize:"12px",marginTop:"20px"}}>
-          Get a key at <a href="https://console.anthropic.com" target="_blank" rel="noreferrer" style={{color:TF.c.accentHi}}>console.anthropic.com</a>
-        </p>
+        <h1 style={{color:c.text,fontSize:28,fontWeight:800,margin:"0 0 10px",letterSpacing:"-0.04em",fontFamily:font}}>TripForge</h1>
+        <p style={{color:c.textMuted,fontSize:15,lineHeight:1.7,margin:"0 0 32px"}}>AI-powered travel planning. Enter your Anthropic API key to get started — it stays in your browser only.</p>
+        <Field icon="globe" value={key} onChange={e=>setKey(e.target.value)} placeholder="sk-ant-api03-..." style={{marginBottom:14}} />
+        <Btn onClick={()=>key.trim()&&onSave(key.trim())} full style={{fontSize:16,padding:"14px",borderRadius:14}}>Start planning →</Btn>
+        <p style={{color:c.textSubtle,fontSize:12,marginTop:18}}>Get a key at <a href="https://console.anthropic.com" target="_blank" rel="noreferrer" style={{color:c.accentHi,fontWeight:600}}>console.anthropic.com</a></p>
       </div>
     </div>
   );
 }
 
-// ── Settings Panel ────────────────────────────────────────────────────────────
+// ─── Settings Panel ───────────────────────────────────────────────────────────
 function SettingsPanel({ settings, onChange, onClose, apiKey, onChangeKey }) {
-  const [newKey, setNewKey] = useState(apiKey);
+  const { c, fontBody, fontMono } = useTokens();
+  const [nk, setNk] = useState(apiKey);
   return (
-    <div style={{
-      position:"fixed",top:0,right:0,bottom:0,width:"340px",
-      background:`linear-gradient(180deg, ${TF.c.elevated}, ${TF.c.bg})`,
-      borderLeft:`1px solid ${TF.c.border}`,zIndex:900,
-      padding:"32px 24px",fontFamily:TF.fontSans,
-      overflowY:"auto"
-    }}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"32px"}}>
-        <h3 style={{color:TF.c.text,fontFamily:TF.fontSans,fontSize:"18px",fontWeight:700,margin:0,letterSpacing:"-0.02em"}}>Settings</h3>
-        <button onClick={onClose} style={{background:"none",border:"none",color:TF.c.textMuted,cursor:"pointer"}}>
-          <ImgIcon name="x" size={22} color={TF.c.textMuted} title="Close" />
-        </button>
+    <div style={{position:"fixed",top:0,right:0,bottom:0,width:300,background:c.surface,borderLeft:`1.5px solid ${c.border}`,zIndex:900,padding:"28px 22px",fontFamily:fontBody,overflowY:"auto"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:28}}>
+        <span style={{color:c.text,fontSize:17,fontWeight:700}}>Settings</span>
+        <button onClick={onClose} style={{background:"none",border:"none",cursor:"pointer"}}><Icon name="x" size={20} color={c.textMuted}/></button>
       </div>
-      {[
-        {label:"Currency", key:"currency", options:["USD","EUR","GBP","CAD","AUD","JPY"]},
-        {label:"Temperature", key:"units", options:["Fahrenheit","Celsius"]},
-        {label:"Distance", key:"distance", options:["Miles","Kilometers"]},
-      ].map(({label,key,options}) => (
-        <div key={key} style={{marginBottom:"24px"}}>
-          <label style={{color:TF.c.textMuted,fontSize:"11px",letterSpacing:"0.06em",textTransform:"uppercase",display:"block",marginBottom:"8px",fontWeight:600}}>{label}</label>
-          <div style={{display:"flex",gap:"8px",flexWrap:"wrap"}}>
-            {options.map(opt => (
-              <button key={opt} onClick={() => onChange({...settings,[key]:opt})}
-                style={{
-                  padding:"8px 14px",borderRadius:"8px",border:"1px solid",cursor:"pointer",fontSize:"13px",
-                  borderColor: settings[key]===opt ? TF.c.accentBorder:TF.c.border,
-                  background: settings[key]===opt ? TF.c.accentLow:"transparent",
-                  color: settings[key]===opt ? TF.c.accentHi:TF.c.textMuted,
-                }}>{opt}</button>
-            ))}
+      {[{label:"Currency",key:"currency",opts:["USD","EUR","GBP","CAD","AUD","JPY"]},{label:"Temperature",key:"units",opts:["Fahrenheit","Celsius"]}].map(({label,key,opts})=>(
+        <div key={key} style={{marginBottom:22}}>
+          <div style={{color:c.textMuted,fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:10}}>{label}</div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            {opts.map(o=><button key={o} onClick={()=>onChange({...settings,[key]:o})} style={{padding:"7px 14px",borderRadius:8,border:`1.5px solid ${settings[key]===o?c.accentBorder:c.border}`,background:settings[key]===o?c.accentLow:"transparent",color:settings[key]===o?c.accentHi:c.textMuted,fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:fontBody}}>{o}</button>)}
           </div>
         </div>
       ))}
-      <div style={{marginBottom:"24px"}}>
-        <label style={{color:TF.c.textMuted,fontSize:"11px",letterSpacing:"0.06em",textTransform:"uppercase",display:"block",marginBottom:"8px",fontWeight:600}}>Filters</label>
-        {[
-          {label:"Refundable bookings only",key:"refundableOnly"},
-          {label:"Direct flights only",key:"directOnly"},
-          {label:"Show affiliate links",key:"showAffiliates"},
-        ].map(({label,key}) => (
-          <div key={key} onClick={() => onChange({...settings,[key]:!settings[key]})}
-            style={{display:"flex",alignItems:"center",gap:"12px",padding:"10px 0",cursor:"pointer",borderBottom:`1px solid ${TF.c.border}`}}>
-            <div style={{
-              width:"20px",height:"20px",borderRadius:"6px",border:"1px solid",
-              borderColor: settings[key] ? TF.c.accentBorder:TF.c.borderStrong,
-              background: settings[key] ? TF.c.accentLow:"transparent",
-              display:"flex",alignItems:"center",justifyContent:"center",
-            }}>
-              {settings[key] && <Icon name="check" size={12} color={TF.c.accent} />}
-            </div>
-            <span style={{color:TF.c.text,fontSize:"14px"}}>{label}</span>
+      {[{label:"Refundable only",key:"refundableOnly"},{label:"Direct flights only",key:"directOnly"}].map(({label,key})=>(
+        <div key={key} onClick={()=>onChange({...settings,[key]:!settings[key]})} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 0",cursor:"pointer",borderBottom:`1px solid ${c.border}`}}>
+          <div style={{width:22,height:22,borderRadius:7,border:`1.5px solid ${settings[key]?c.accentBorder:c.borderStrong}`,background:settings[key]?c.accentLow:"transparent",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            {settings[key]&&<Icon name="check" size={12} color={c.accent}/>}
           </div>
-        ))}
-      </div>
-      <div>
-        <label style={{color:TF.c.textMuted,fontSize:"11px",letterSpacing:"0.06em",textTransform:"uppercase",display:"block",marginBottom:"8px",fontWeight:600}}>API Key</label>
-        <input value={newKey} onChange={e=>setNewKey(e.target.value)} type="password"
-          style={{width:"100%",padding:"10px 14px",background:TF.c.bg2,border:`1px solid ${TF.c.borderStrong}`,borderRadius:"8px",color:TF.c.text,fontSize:"13px",fontFamily:TF.fontMono,outline:"none",boxSizing:"border-box",marginBottom:"8px"}}/>
-        <button onClick={() => onChangeKey(newKey)}
-          style={{width:"100%",padding:"10px",background:TF.c.accentLow,border:`1px solid ${TF.c.accentBorder}`,borderRadius:"8px",color:TF.c.accentHi,cursor:"pointer",fontSize:"13px",fontWeight:600}}>
-          Update Key
-        </button>
+          <span style={{color:c.text,fontSize:14}}>{label}</span>
+        </div>
+      ))}
+      <div style={{marginTop:26}}>
+        <div style={{color:c.textMuted,fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:10}}>API Key</div>
+        <input value={nk} onChange={e=>setNk(e.target.value)} type="password" style={{width:"100%",padding:"10px 13px",background:c.bg2,border:`1.5px solid ${c.border}`,borderRadius:10,color:c.text,fontSize:13,fontFamily:fontMono,outline:"none",boxSizing:"border-box",marginBottom:10}}/>
+        <Btn onClick={()=>onChangeKey(nk)} variant="ghost" full>Update Key</Btn>
       </div>
     </div>
   );
 }
 
-// ── Hero Search ───────────────────────────────────────────────────────────────
+// ─── Hero Search — FIXED: single "Flying from" ───────────────────────────────
 function HeroSearch({ onSearch, loading }) {
-  const [form, setForm] = useState({
-    destination:"",from:"",dateFrom:"",dateTo:"",travelers:"2",budget:"3000",style:"relaxation"
-  });
-  const set = (k,v) => setForm(f => ({...f,[k]:v}));
-  return (
-    <div style={{
-      background:`linear-gradient(180deg, ${TF.c.accentLow} 0%, transparent 55%)`,
-      border:`1px solid ${TF.c.border}`,borderRadius:"16px",padding:"32px 36px",
-      marginBottom:"40px"
-    }}>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:"16px",marginBottom:"20px"}}>
-        {[
-          {label:"Destination",icon:"pin",key:"destination",placeholder:"Paris, Tokyo, Bali…"},
-          {label:"Departing from",icon:"home",key:"from",placeholder:"New York, London…"},
-          {label:"Check-in",icon:"calendar",key:"dateFrom",type:"date"},
-          {label:"Check-out",icon:"calendar",key:"dateTo",type:"date"},
-        ].map(({label,key,placeholder,type="text"}) => (
-          <div key={key}>
-            <label style={{color:TF.c.textMuted,fontSize:"11px",letterSpacing:"0.06em",textTransform:"uppercase",display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px",fontWeight:600}}>
-              <ImgIcon name={key === "destination" ? "pin" : key === "from" ? "home" : "calendar"} size={14} color={TF.c.textMuted} title={label} />
-              <span>{label}</span>
-            </label>
-            <input value={form[key]} onChange={e=>set(key,e.target.value)} placeholder={placeholder} type={type}
-              style={{
-                width:"100%",padding:"12px 14px",background:TF.c.bg2,
-                border:`1px solid ${TF.c.borderStrong}`,borderRadius:"10px",color:TF.c.text,
-                fontSize:"14px",outline:"none",boxSizing:"border-box",colorScheme:"dark"
-              }}/>
-          </div>
-        ))}
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:"16px",alignItems:"end"}}>
-        <div>
-          <label style={{color:TF.c.textMuted,fontSize:"11px",letterSpacing:"0.06em",textTransform:"uppercase",display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px",fontWeight:600}}>
-            <ImgIcon name="users" size={14} color={TF.c.textMuted} title="Travelers" />
-            <span>Travelers</span>
-          </label>
-          <input value={form.travelers} onChange={e=>set("travelers",e.target.value)} type="number" min="1" max="20"
-            style={{width:"100%",padding:"12px 14px",background:TF.c.bg2,border:`1px solid ${TF.c.borderStrong}`,borderRadius:"10px",color:TF.c.text,fontSize:"14px",outline:"none",boxSizing:"border-box"}}/>
-        </div>
-        <div>
-          <label style={{color:TF.c.textMuted,fontSize:"11px",letterSpacing:"0.06em",textTransform:"uppercase",display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px",fontWeight:600}}>
-            <ImgIcon name="dollar" size={14} color={TF.c.textMuted} title="Budget" />
-            <span>Budget (USD)</span>
-          </label>
-          <input value={form.budget} onChange={e=>set("budget",e.target.value)} type="number"
-            style={{width:"100%",padding:"12px 14px",background:TF.c.bg2,border:`1px solid ${TF.c.borderStrong}`,borderRadius:"10px",color:TF.c.text,fontSize:"14px",outline:"none",boxSizing:"border-box"}}/>
-        </div>
-        <div>
-          <label style={{color:TF.c.textMuted,fontSize:"11px",letterSpacing:"0.06em",textTransform:"uppercase",display:"flex",alignItems:"center",gap:"8px",marginBottom:"6px",fontWeight:600}}>
-            <ImgIcon name="target" size={14} color={TF.c.textMuted} title="Trip style" />
-            <span>Trip style</span>
-          </label>
-          <select value={form.style} onChange={e=>set("style",e.target.value)}
-            style={{width:"100%",padding:"12px 14px",background:TF.c.bg2,border:`1px solid ${TF.c.borderStrong}`,borderRadius:"10px",color:TF.c.text,fontSize:"14px",outline:"none",boxSizing:"border-box"}}>
-            {["relaxation","adventure","culture","family","romance","food & wine","backpacking"].map(s=>(
-              <option key={s} value={s}>{s.charAt(0).toUpperCase()+s.slice(1)}</option>
-            ))}
-          </select>
-        </div>
-        <button onClick={() => onSearch(form)} disabled={loading || !form.destination}
-          style={{
-            padding:"12px 28px",background:loading?TF.c.surfaceHover:`linear-gradient(135deg, ${TF.c.accent}, ${TF.c.accentHi})`,
-            border:"none",borderRadius:"10px",color:loading?TF.c.textSubtle:TF.c.onAccent,fontWeight:700,fontSize:"15px",
-            cursor:loading?"not-allowed":"pointer",fontFamily:TF.fontSans,
-            whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:"8px"
-          }}>
-          {loading ? "Planning…" : <><ImgIcon name="spark" size={16} color={TF.c.onAccent} title="Plan" />Plan trip</>}
-        </button>
-      </div>
-      <button onClick={() => onSearch({...form, destination: "Surprise me!", surpriseMode: true})}
-        style={{marginTop:"16px",background:"transparent",border:`1px dashed ${TF.c.borderStrong}`,borderRadius:"10px",
-          padding:"10px 20px",color:TF.c.accentHi,cursor:"pointer",fontSize:"13px",width:"100%",fontWeight:500}}>
-        Surprise me — pick a destination within budget
-      </button>
-    </div>
-  );
-}
+  const { c, fontBody } = useTokens();
+  const [multiCity, setMultiCity] = useState(false);
+  const [dests, setDests] = useState([{city:"",dateFrom:"",dateTo:""}]);
+  const [from, setFrom] = useState("");
+  const [travelers, setTravelers] = useState("2");
+  const [budget, setBudget] = useState("3000");
+  const [style, setStyle] = useState("relaxation");
 
-// ── Itinerary Tab ─────────────────────────────────────────────────────────────
-function ItineraryTab({ tripData, loading, form, apiKey }) {
-  const [cheaperLoading, setCheaperLoading] = useState(false);
-  const [cheaperTip, setCheaperTip] = useState("");
-  const [packingLoading, setPackingLoading] = useState(false);
-  const [packingList, setPackingList] = useState(null);
+  const upd = (i,k,v) => setDests(d=>d.map((x,j)=>j===i?{...x,[k]:v}:x));
+  const styles = ["relaxation","adventure","culture","food & wine","city break","nature","family","luxury","budget"];
 
-  async function getCheaper() {
-    setCheaperLoading(true); setCheaperTip("");
-    try {
-      const res = await askClaude(
-        "You are a budget travel expert. Respond in 3–4 concise bullet points.",
-        `How can someone save money on a ${form.style} trip to ${form.destination} with a $${form.budget} budget for ${form.travelers} travelers?`,
-        apiKey
-      );
-      setCheaperTip(res);
-    } catch(e) { setCheaperTip("Error: "+e.message); }
-    setCheaperLoading(false);
+  function go(surpriseMode=false) {
+    onSearch({
+      from, travelers, budget, style, multiCity,
+      destinations:dests,
+      destination: multiCity ? dests.map(d=>d.city).filter(Boolean).join(" → ") : dests[0]?.city||"",
+      dateFrom: dests[0]?.dateFrom||"",
+      dateTo: multiCity ? dests[dests.length-1]?.dateTo||"" : dests[0]?.dateTo||"",
+      surpriseMode,
+    });
   }
 
-  async function getPacking() {
-    setPackingLoading(true); setPackingList(null);
+  const selStyle = {
+    width:"100%",padding:"13px 14px 13px 40px",background:c.bg2,
+    border:`1.5px solid ${c.border}`,borderRadius:12,color:c.text,
+    fontSize:14,fontFamily:fontBody,outline:"none",appearance:"none",
+    WebkitAppearance:"none",cursor:"pointer",
+  };
+
+  return (
+    <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:20,overflow:"hidden",marginBottom:32,boxShadow:`0 4px 40px ${c.dark?"rgba(0,0,0,0.4)":"rgba(0,0,0,0.06)"}`}}>
+      {/* Orange header band */}
+      <div style={{background:`linear-gradient(135deg,${c.accent} 0%,${c.accentHi} 100%)`,padding:"22px 28px 20px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+          <div>
+            <h2 style={{color:"#fff",fontSize:20,fontWeight:800,margin:0,letterSpacing:"-0.03em"}}>Plan your perfect trip</h2>
+            <p style={{color:"rgba(255,255,255,0.78)",fontSize:13,margin:"4px 0 0"}}>AI builds your full itinerary in seconds</p>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            {["Single","Multi-city"].map((label,i)=>(
+              <button key={label} onClick={()=>{setMultiCity(i===1);if(i===1&&dests.length<2)setDests(d=>[...d,{city:"",dateFrom:"",dateTo:""}]);}}
+                style={{padding:"8px 16px",borderRadius:9,border:"1.5px solid",borderColor:(i===1)===multiCity?"rgba(255,255,255,0.9)":"rgba(255,255,255,0.35)",background:(i===1)===multiCity?"rgba(255,255,255,0.22)":"transparent",color:"#fff",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:fontBody}}>
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div style={{padding:"24px 28px 28px"}}>
+        {/* Destination(s) */}
+        {multiCity ? (
+          <div style={{marginBottom:16}}>
+            {dests.map((d,i)=>(
+              <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:10,marginBottom:10,alignItems:"center"}}>
+                <Field icon="pin" value={d.city} onChange={e=>upd(i,"city",e.target.value)} placeholder={`Stop ${i+1} — city`}/>
+                <Field icon="calendar" value={d.dateFrom} onChange={e=>upd(i,"dateFrom",e.target.value)} type="date" placeholder="Arrive"/>
+                <Field icon="calendar" value={d.dateTo} onChange={e=>upd(i,"dateTo",e.target.value)} type="date" placeholder="Depart"/>
+                {dests.length>2
+                  ? <button onClick={()=>setDests(d=>d.filter((_,j)=>j!==i))} style={{background:"none",border:"none",cursor:"pointer",padding:6,borderRadius:8}}><Icon name="trash" size={16} color={c.danger}/></button>
+                  : <div/>}
+              </div>
+            ))}
+            <Btn onClick={()=>setDests(d=>[...d,{city:"",dateFrom:"",dateTo:""}])} variant="muted" style={{fontSize:13,padding:"9px 16px"}}>
+              <Icon name="plus" size={14} color={c.textMuted}/>Add stop
+            </Btn>
+          </div>
+        ) : (
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:12,marginBottom:16}}>
+            <Field icon="pin" value={dests[0]?.city} onChange={e=>upd(0,"city",e.target.value)} placeholder="Where to? Paris, Tokyo, Bali…"/>
+            <Field icon="calendar" value={dests[0]?.dateFrom} onChange={e=>upd(0,"dateFrom",e.target.value)} type="date" placeholder="Depart date"/>
+            <Field icon="calendar" value={dests[0]?.dateTo} onChange={e=>upd(0,"dateTo",e.target.value)} type="date" placeholder="Return date"/>
+          </div>
+        )}
+
+        {/* Shared row — "Flying from" appears exactly ONCE */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:18}}>
+          <Field icon="plane" value={from} onChange={e=>setFrom(e.target.value)} placeholder="Flying from (city or airport)"/>
+          <Field icon="dollar" value={budget} onChange={e=>setBudget(e.target.value)} placeholder="Total budget ($)" type="number"/>
+          <div style={{position:"relative"}}>
+            <span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",opacity:0.5}}><Icon name="users" size={15} color={c.text}/></span>
+            <select value={travelers} onChange={e=>setTravelers(e.target.value)} style={selStyle}>
+              {[1,2,3,4,5,6,8,10].map(n=><option key={n} value={n}>{n} traveler{n>1?"s":""}</option>)}
+            </select>
+          </div>
+        </div>
+
+        {/* Style pills */}
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:22}}>
+          {styles.map(s=>(
+            <button key={s} onClick={()=>setStyle(s)}
+              style={{padding:"7px 14px",borderRadius:999,border:`1.5px solid ${style===s?c.accentBorder:c.border}`,background:style===s?c.accentLow:"transparent",color:style===s?c.accentHi:c.textMuted,fontSize:12,fontWeight:style===s?700:500,cursor:"pointer",fontFamily:fontBody,textTransform:"capitalize",transition:"all 0.15s"}}>
+              {s}
+            </button>
+          ))}
+        </div>
+
+        {/* CTA */}
+        <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+          <Btn onClick={()=>go(false)} disabled={loading} style={{flex:1,minWidth:200,padding:"14px 24px",fontSize:15,borderRadius:14}}>
+            <Icon name="sparkle" size={17} color="#fff"/>
+            {loading?"Building your itinerary…":"Build my itinerary"}
+          </Btn>
+          <Btn onClick={()=>go(true)} disabled={loading} variant="muted" style={{flexShrink:0,borderRadius:14}}>
+            🎲 Surprise me
+          </Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Itinerary Tab ────────────────────────────────────────────────────────────
+function ItineraryTab({ tripData, loading, form, apiKey }) {
+  const { c, fontBody } = useTokens();
+  const [extras, setExtras] = useState(null);
+  const [extrasLoading, setExtrasLoading] = useState(false);
+
+  async function getExtras() {
+    setExtrasLoading(true); setExtras(null);
     try {
       const raw = await askClaude(
-        `You are a packing list expert. Return ONLY a JSON object: {"categories":[{"name":"string","items":["string"]}]}. No markdown.`,
-        `Packing list for a ${form.style} trip to ${form.destination} from ${form.dateFrom} to ${form.dateTo} for ${form.travelers} travelers.`,
+        `Travel expert. Return ONLY JSON: {"budgetTips":["string","string","string"],"packing":{"categories":[{"name":"string","items":["string"]}]}}. No markdown.`,
+        `${form.style} trip to ${form.destination}. ${form.travelers} travelers. $${form.budget} budget. ${form.dateFrom||"flexible"} to ${form.dateTo||"flexible"}.`,
         apiKey
       );
-      setPackingList(parseJSON(raw));
-    } catch(e) { setPackingList({error: e.message}); }
-    setPackingLoading(false);
+      setExtras(parseJSON(raw));
+    } catch(e) { setExtras({error:e.message}); }
+    setExtrasLoading(false);
   }
 
   if (loading) return (
-    <div style={{display:"flex",flexDirection:"column",gap:"20px"}}>
-      {[1,2,3].map(i=>(
-        <div key={i} style={{background:TF.c.surface,border:`1px solid ${TF.c.border}`,borderRadius:"14px",padding:"24px",display:"flex",flexDirection:"column",gap:"12px"}}>
-          <Skeleton h="24px" w="40%" />
-          <Skeleton h="16px" /><Skeleton h="16px" w="80%" /><Skeleton h="16px" w="60%" />
-        </div>
-      ))}
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <div style={{background:c.surface,borderRadius:18,padding:32,textAlign:"center",border:`1.5px solid ${c.border}`}}>
+        <div style={{fontSize:52,marginBottom:14,display:"inline-block",animation:"spin 2s linear infinite"}}>✈️</div>
+        <div style={{color:c.text,fontSize:18,fontWeight:700,marginBottom:6}}>Building your itinerary…</div>
+        <div style={{color:c.textMuted,fontSize:14}}>TripForge is crafting your {form.style} trip to {form.destination}</div>
+      </div>
+      {[1,2,3].map(i=><div key={i} style={{background:c.surface,borderRadius:16,padding:24,display:"flex",flexDirection:"column",gap:12}}><Skeleton h="20px" w="40%"/><Skeleton h="14px"/><Skeleton h="14px" w="70%"/></div>)}
     </div>
   );
 
   if (!tripData) return (
-    <div style={{textAlign:"center",padding:"80px 20px",color:TF.c.textSubtle}}>
-      <div style={{display:"flex",justifyContent:"center",marginBottom:"16px"}}>
-        <div style={{width:"64px",height:"64px",borderRadius:"16px",background:TF.c.surface,border:`1px solid ${TF.c.border}`,display:"flex",alignItems:"center",justifyContent:"center"}}>
-          <ImgIcon name="map" size={28} color={TF.c.textMuted} title="Map" />
-        </div>
-      </div>
-      <p style={{fontSize:"17px",color:TF.c.textMuted}}>Enter your trip details above to build an itinerary</p>
+    <div style={{textAlign:"center",padding:"72px 20px"}}>
+      <div style={{fontSize:64,marginBottom:16}}>🌍</div>
+      <div style={{color:c.text,fontSize:20,fontWeight:700,marginBottom:8}}>Ready to explore?</div>
+      <p style={{color:c.textMuted,fontSize:15,maxWidth:380,margin:"0 auto"}}>Fill in your trip details above and let AI build your perfect itinerary</p>
     </div>
   );
 
@@ -509,52 +453,63 @@ function ItineraryTab({ tripData, loading, form, apiKey }) {
 
   return (
     <div>
-      {summary && (
-        <div style={{background:`linear-gradient(145deg, ${TF.c.accentLow}, transparent)`,border:`1px solid ${TF.c.border}`,borderRadius:"14px",padding:"24px",marginBottom:"28px"}}>
-          <h2 style={{fontFamily:TF.fontSans,color:TF.c.text,fontSize:"24px",fontWeight:700,margin:"0 0 8px",letterSpacing:"-0.02em"}}>{destination}</h2>
-          <p style={{color:TF.c.textMuted,lineHeight:"1.7",margin:0}}>{summary}</p>
+      <AdSlot/>
+      <div style={{background:`linear-gradient(135deg,${c.accentLow},${c.tealLow})`,border:`1.5px solid ${c.border}`,borderRadius:20,padding:"26px 28px",marginBottom:20}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:200}}>
+            <div style={{color:c.accent,fontSize:11,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:8}}>Your itinerary</div>
+            <h2 style={{color:c.text,fontSize:26,fontWeight:800,margin:"0 0 10px",letterSpacing:"-0.04em",lineHeight:1.1}}>{destination}</h2>
+            <p style={{color:c.textMuted,lineHeight:1.7,margin:0,fontSize:14}}>{summary}</p>
+          </div>
+          <button onClick={()=>window.print()} style={{flexShrink:0,background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:10,padding:"9px 16px",color:c.textMuted,cursor:"pointer",display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:600,fontFamily:fontBody}}>
+            <Icon name="print" size={14} color={c.textMuted}/> Print
+          </button>
         </div>
-      )}
+      </div>
 
       {budgetBreakdown && (
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:"12px",marginBottom:"28px"}}>
-          {Object.entries(budgetBreakdown).map(([k,v]) => (
-            <div key={k} style={{background:TF.c.surface,border:`1px solid ${TF.c.border}`,borderRadius:"12px",padding:"16px",textAlign:"center"}}>
-              <div style={{color:TF.c.accentHi,fontSize:"18px",fontWeight:700}}>{v}</div>
-              <div style={{color:TF.c.textMuted,fontSize:"12px",textTransform:"capitalize",marginTop:"4px"}}>{k}</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(110px,1fr))",gap:10,marginBottom:20}}>
+          {Object.entries(budgetBreakdown).map(([k,v])=>(
+            <div key={k} style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:14,padding:"14px",textAlign:"center"}}>
+              <div style={{color:c.accent,fontSize:16,fontWeight:800}}>{v}</div>
+              <div style={{color:c.textMuted,fontSize:11,textTransform:"capitalize",marginTop:4,fontWeight:600}}>{k}</div>
             </div>
           ))}
         </div>
       )}
 
-      <div style={{display:"flex",gap:"12px",marginBottom:"28px",flexWrap:"wrap"}}>
-        <button onClick={getCheaper} disabled={cheaperLoading}
-          style={{padding:"10px 20px",background:TF.c.accentLow,border:`1px solid ${TF.c.accentBorder}`,borderRadius:"10px",color:TF.c.accentHi,cursor:"pointer",fontSize:"13px",display:"flex",alignItems:"center",gap:"8px",fontWeight:600}}>
-          <Icon name="dollar" size={14} color={TF.c.accent}/>
-          {cheaperLoading ? "Thinking…" : "Can I do this cheaper?"}
-        </button>
-        <button onClick={getPacking} disabled={packingLoading}
-          style={{padding:"10px 20px",background:TF.c.surface,border:`1px solid ${TF.c.border}`,borderRadius:"10px",color:TF.c.text,cursor:"pointer",fontSize:"13px",display:"flex",alignItems:"center",gap:"8px",fontWeight:500}}>
-          <Icon name="bag" size={14} color={TF.c.textMuted}/>
-          {packingLoading ? "Generating…" : "Generate packing list"}
-        </button>
+      <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
+        <Btn onClick={getExtras} disabled={extrasLoading} variant="ghost" style={{fontSize:13,padding:"10px 18px"}}>
+          <Icon name="bag" size={14} color={c.accentHi}/>
+          {extrasLoading?"Thinking…":"Budget tips + packing list"}
+        </Btn>
+        <a href={AFF.viator(form.destination)} target="_blank" rel="noopener noreferrer"
+          style={{display:"inline-flex",alignItems:"center",gap:8,padding:"10px 18px",background:c.tealLow,border:`1.5px solid rgba(15,212,200,0.3)`,borderRadius:12,color:c.teal,textDecoration:"none",fontSize:13,fontWeight:700,fontFamily:fontBody}}>
+          <Icon name="sparkle" size={14} color={c.teal}/> Book activities (Viator)
+        </a>
       </div>
 
-      {cheaperTip && (
-        <div style={{background:TF.c.surface,border:`1px solid ${TF.c.border}`,borderRadius:"12px",padding:"20px",marginBottom:"24px",color:TF.c.text,lineHeight:"1.7",whiteSpace:"pre-wrap",fontSize:"14px"}}>
-          {cheaperTip}
+      {extras?.budgetTips && (
+        <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:16,padding:22,marginBottom:18}}>
+          <div style={{color:c.accent,fontWeight:800,fontSize:12,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:14}}>💰 Budget Tips</div>
+          {extras.budgetTips.map((t,i)=>(
+            <div key={i} style={{display:"flex",gap:12,marginBottom:10}}>
+              <span style={{color:c.accentHi,fontWeight:800,fontSize:14,flexShrink:0}}>{i+1}.</span>
+              <span style={{color:c.textMuted,fontSize:14,lineHeight:1.6}}>{t}</span>
+            </div>
+          ))}
         </div>
       )}
 
-      {packingList && !packingList.error && (
-        <div style={{background:TF.c.surface,border:`1px solid ${TF.c.border}`,borderRadius:"14px",padding:"24px",marginBottom:"24px"}}>
-          <h3 style={{color:TF.c.text,fontFamily:TF.fontSans,fontWeight:700,marginTop:0,fontSize:"17px",letterSpacing:"-0.02em"}}>Packing list</h3>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:"20px"}}>
-            {packingList.categories?.map(cat => (
+      {extras?.packing && (
+        <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:16,padding:22,marginBottom:20}}>
+          <div style={{color:c.text,fontWeight:700,fontSize:15,marginBottom:16}}>🧳 Packing List</div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(170px,1fr))",gap:18}}>
+            {extras.packing.categories?.map(cat=>(
               <div key={cat.name}>
-                <div style={{color:TF.c.text,fontWeight:600,marginBottom:"8px",fontSize:"14px"}}>{cat.name}</div>
-                <ul style={{margin:0,padding:"0 0 0 16px",color:TF.c.textMuted,fontSize:"13px",lineHeight:"1.8"}}>
-                  {cat.items?.map(item => <li key={item}>{item}</li>)}
+                <div style={{color:c.accentHi,fontWeight:700,marginBottom:8,fontSize:12,textTransform:"uppercase",letterSpacing:"0.06em"}}>{cat.name}</div>
+                <ul style={{margin:0,padding:"0 0 0 16px",color:c.textMuted,fontSize:13,lineHeight:2}}>
+                  {cat.items?.map(item=><li key={item}>{item}</li>)}
                 </ul>
               </div>
             ))}
@@ -562,277 +517,211 @@ function ItineraryTab({ tripData, loading, form, apiKey }) {
         </div>
       )}
 
-      {days?.map((day, i) => (
-        <DayCard key={i} day={day} index={i} />
-      ))}
+      {days?.map((day,i)=><DayCard key={i} day={day} index={i}/>)}
 
-      {tips && tips.length > 0 && (
-        <div style={{background:TF.c.elevated,border:`1px solid ${TF.c.border}`,borderRadius:"14px",padding:"24px",marginTop:"16px"}}>
-          <h3 style={{color:TF.c.text,fontFamily:TF.fontSans,fontWeight:700,marginTop:0,fontSize:"17px",letterSpacing:"-0.02em"}}>Local tips</h3>
-          <ul style={{margin:0,padding:"0 0 0 20px",color:TF.c.textMuted,lineHeight:"2",fontSize:"14px"}}>
-            {tips.map((t,i) => <li key={i}>{t}</li>)}
-          </ul>
+      {tips?.length>0 && (
+        <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:16,padding:22,marginTop:14}}>
+          <div style={{color:c.text,fontWeight:700,fontSize:15,marginBottom:14}}>💡 Local Tips</div>
+          {tips.map((t,i)=>(
+            <div key={i} style={{display:"flex",gap:12,marginBottom:10}}>
+              <span style={{color:c.teal,fontWeight:700,flexShrink:0}}>→</span>
+              <span style={{color:c.textMuted,fontSize:14,lineHeight:1.6}}>{t}</span>
+            </div>
+          ))}
         </div>
       )}
+      <AdSlot style={{marginTop:20}}/>
     </div>
   );
 }
 
 function DayCard({ day, index }) {
+  const { c, fontBody } = useTokens();
   const [open, setOpen] = useState(index < 2);
   return (
-    <div style={{background:TF.c.surface,border:`1px solid ${TF.c.border}`,borderRadius:"14px",marginBottom:"12px",overflow:"hidden"}}>
-      <button type="button" onClick={() => setOpen(!open)}
-        style={{width:"100%",padding:"18px 22px",background:"transparent",border:"none",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",textAlign:"left"}}>
+    <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:16,marginBottom:10,overflow:"hidden"}}>
+      <button onClick={()=>setOpen(!open)} style={{width:"100%",padding:"18px 22px",background:"transparent",border:"none",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",textAlign:"left",fontFamily:fontBody}}>
         <div>
-          <span style={{color:TF.c.accent,fontWeight:600,fontSize:"11px",letterSpacing:"0.08em",textTransform:"uppercase"}}>Day {index + 1}</span>
-          <h3 style={{color:TF.c.text,margin:"6px 0 0",fontFamily:TF.fontSans,fontSize:"17px",fontWeight:600,letterSpacing:"-0.02em"}}>{day.title || day.theme}</h3>
+          <span style={{color:c.accent,fontWeight:800,fontSize:11,letterSpacing:"0.1em",textTransform:"uppercase"}}>Day {index+1}</span>
+          <div style={{color:c.text,marginTop:4,fontSize:16,fontWeight:700,letterSpacing:"-0.02em"}}>{day.title||day.theme}</div>
         </div>
-        <span style={{display:"flex",transform:open?"rotate(90deg)":"none",transition:"transform 0.2s"}}>
-          <ImgIcon name="chevron" size={22} color={TF.c.textMuted} title={open ? "Collapse" : "Expand"} />
+        <span style={{transform:open?"rotate(90deg)":"none",transition:"transform 0.2s",display:"inline-flex",flexShrink:0}}>
+          <Icon name="chevron" size={20} color={c.textMuted}/>
         </span>
       </button>
       {open && (
         <div style={{padding:"0 22px 22px"}}>
-          {day.activities?.map((act, j) => (
-            <div key={j} style={{display:"flex",gap:"16px",padding:"12px 0",borderTop:`1px solid ${TF.c.border}`}}>
-              <div style={{color:TF.c.accentHi,fontSize:"12px",fontWeight:600,minWidth:"64px",paddingTop:"2px",fontVariantNumeric:"tabular-nums"}}>{act.time}</div>
+          {day.activities?.map((act,j)=>(
+            <div key={j} style={{display:"flex",gap:16,padding:"13px 0",borderTop:`1px solid ${c.border}`}}>
+              <div style={{color:c.accent,fontSize:12,fontWeight:800,minWidth:58,paddingTop:2,flexShrink:0}}>{act.time}</div>
               <div>
-                <div style={{color:TF.c.text,fontWeight:600,fontSize:"14px"}}>{act.name || act.activity}</div>
-                <div style={{color:TF.c.textMuted,fontSize:"13px",marginTop:"4px",lineHeight:"1.5"}}>{act.description || act.details}</div>
-                {act.cost && <div style={{color:TF.c.accent,fontSize:"12px",marginTop:"4px",fontWeight:500}}>~{act.cost}</div>}
+                <div style={{color:c.text,fontWeight:700,fontSize:14}}>{act.name||act.activity}</div>
+                <div style={{color:c.textMuted,fontSize:13,marginTop:4,lineHeight:1.65}}>{act.description||act.details}</div>
+                {act.cost&&<div style={{color:c.accentHi,fontSize:12,marginTop:5,fontWeight:700}}>~{act.cost}</div>}
               </div>
             </div>
           ))}
-          {day.notes && <p style={{color:TF.c.textMuted,fontSize:"13px",marginTop:"12px",fontStyle:"italic"}}>{day.notes}</p>}
+          {day.notes&&<p style={{color:c.textMuted,fontSize:13,marginTop:12,fontStyle:"italic",lineHeight:1.6}}>{day.notes}</p>}
         </div>
       )}
     </div>
   );
 }
 
-// ── Flights Tab ───────────────────────────────────────────────────────────────
-function FlightsTab({ form, settings }) {
-  const skyscannerUrl = form.destination
-    ? `https://www.skyscanner.com/transport/flights/${encodeURIComponent(form.from || "")}/${encodeURIComponent(form.destination)}/${form.dateFrom?.replace(/-/g,"")}/`
-    : "https://www.skyscanner.com";
+// ─── Map Tab ──────────────────────────────────────────────────────────────────
+function MapTab({ tripData, form }) {
+  const { c } = useTokens();
+  const mapRef = useRef(null);
+  const inst = useRef(null);
+  const [loaded, setLoaded] = useState(false);
 
-  const googleFlightsUrl = form.destination
-    ? `https://www.google.com/travel/flights?q=flights+from+${encodeURIComponent(form.from||"")}+to+${encodeURIComponent(form.destination)}`
-    : "https://www.google.com/travel/flights";
+  useEffect(()=>{
+    if (document.getElementById("lf-css")) { setLoaded(true); return; }
+    const lnk=document.createElement("link"); lnk.id="lf-css"; lnk.rel="stylesheet";
+    lnk.href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"; document.head.appendChild(lnk);
+    const sc=document.createElement("script"); sc.src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+    sc.onload=()=>setLoaded(true); document.head.appendChild(sc);
+  },[]);
 
-  // Mock flight data for demo (real: Amadeus API)
-  const mockFlights = [
-    { airline:"Delta Airlines", from:form.from||"JFK", to:form.destination||"Destination", depart:"08:15", arrive:"14:30", duration:"6h 15m", stops:0, price:487, refundable:true, link: skyscannerUrl },
-    { airline:"American Airlines", from:form.from||"JFK", to:form.destination||"Destination", depart:"11:40", arrive:"18:55", duration:"7h 15m", stops:1, price:342, refundable:false, link: skyscannerUrl },
-    { airline:"United Airlines", from:form.from||"JFK", to:form.destination||"Destination", depart:"22:00", arrive:"12:20+1", duration:"14h 20m", stops:1, price:299, refundable:false, link: skyscannerUrl },
-    { airline:"Lufthansa", from:form.from||"JFK", to:form.destination||"Destination", depart:"16:50", arrive:"08:30+1", duration:"15h 40m", stops:0, price:612, refundable:true, link: "https://www.lufthansa.com" },
-  ].filter(f => !settings.refundableOnly || f.refundable)
-   .filter(f => !settings.directOnly || f.stops === 0);
+  useEffect(()=>{
+    if (!loaded||!mapRef.current||!tripData) return;
+    const L=window.L;
+    if (inst.current) { inst.current.remove(); inst.current=null; }
+    fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(form.destination||"")}&count=1`)
+      .then(r=>r.json()).then(data=>{
+        const loc=data.results?.[0]; if(!loc) return;
+        const map=L.map(mapRef.current).setView([loc.latitude,loc.longitude],12); inst.current=map;
+        L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap"}).addTo(map);
+        const icon=L.divIcon({html:`<div style="background:#ff6b2b;width:32px;height:32px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid white;box-shadow:0 3px 12px rgba(0,0,0,0.35)"></div>`,iconSize:[32,32],iconAnchor:[16,32],className:""});
+        L.marker([loc.latitude,loc.longitude],{icon}).addTo(map).bindPopup(`<b>${loc.name}, ${loc.country}</b>`).openPopup();
+      });
+  },[loaded,tripData,form]);
+
+  if (!tripData) return <div style={{textAlign:"center",padding:"72px 20px"}}><div style={{fontSize:64,marginBottom:16}}>🗺️</div><p style={{color:c.textMuted,fontSize:15}}>Plan a trip first to see the map</p></div>;
+  return <div ref={mapRef} style={{width:"100%",height:480,borderRadius:18,overflow:"hidden",border:`1.5px solid ${c.border}`}}/>;
+}
+
+// ─── Restaurants Tab ──────────────────────────────────────────────────────────
+function RestaurantsTab({ form, apiKey }) {
+  const { c, fontBody } = useTokens();
+  const [recs, setRecs] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  async function getRecs() {
+    if (!form.destination||!apiKey) return;
+    setLoading(true); setRecs(null);
+    try {
+      const raw = await askClaude(
+        `Local food expert. Return ONLY JSON: {"restaurants":[{"name":"string","cuisine":"string","priceRange":"$/$$/$$$/$$$$","mustTry":"string","neighborhood":"string","tip":"string"}]}. 6 restaurants. No markdown.`,
+        `Best restaurants in ${form.destination} for a ${form.style||"general"} trip.`,
+        apiKey
+      );
+      setRecs(parseJSON(raw));
+    } catch(e) { setRecs({error:e.message}); }
+    setLoading(false);
+  }
+
+  useEffect(()=>{ if(form.destination&&apiKey&&!recs) getRecs(); },[form.destination]);
+
+  if (!form.destination) return <div style={{textAlign:"center",padding:"72px 20px"}}><div style={{fontSize:64,marginBottom:16}}>🍽️</div><p style={{color:c.textMuted,fontSize:15}}>Enter a destination to get restaurant picks</p></div>;
+  if (loading) return <div style={{display:"flex",flexDirection:"column",gap:12}}>{[...Array(4)].map((_,i)=><Skeleton key={i} h="100px" r="14px"/>)}</div>;
+  const pc=(p)=>p?.length<=1?c.success:p?.length<=2?c.teal:p?.length<=3?c.gold:c.danger;
 
   return (
     <div>
-      <div style={{display:"flex",gap:"12px",marginBottom:"24px",flexWrap:"wrap"}}>
-        <a href={skyscannerUrl} target="_blank" rel="noopener noreferrer"
-          style={{padding:"10px 18px",background:TF.c.surface,border:`1px solid ${TF.c.border}`,borderRadius:"10px",color:TF.c.text,textDecoration:"none",fontSize:"13px",fontWeight:600}}>
-          Search Skyscanner
-        </a>
-        <a href={googleFlightsUrl} target="_blank" rel="noopener noreferrer"
-          style={{padding:"10px 18px",background:TF.c.surface,border:`1px solid ${TF.c.border}`,borderRadius:"10px",color:TF.c.text,textDecoration:"none",fontSize:"13px",fontWeight:600}}>
-          Google Flights
-        </a>
-        <a href="https://www.kayak.com/flights" target="_blank" rel="noopener noreferrer"
-          style={{padding:"10px 18px",background:TF.c.bg2,border:`1px solid ${TF.c.border}`,borderRadius:"10px",color:TF.c.textMuted,textDecoration:"none",fontSize:"13px"}}>
-          Kayak
-        </a>
-        <a href="https://www.expedia.com/Flights-Search" target="_blank" rel="noopener noreferrer"
-          style={{padding:"10px 18px",background:TF.c.bg2,border:`1px solid ${TF.c.border}`,borderRadius:"10px",color:TF.c.textMuted,textDecoration:"none",fontSize:"13px"}}>
-          Expedia
-        </a>
+      <AdSlot/>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22,flexWrap:"wrap",gap:12}}>
+        <h2 style={{color:c.text,fontSize:22,fontWeight:800,margin:0,letterSpacing:"-0.03em"}}>Where to eat in {form.destination}</h2>
+        <Btn onClick={getRecs} disabled={loading} variant="ghost" style={{fontSize:13,padding:"9px 16px"}}><Icon name="sparkle" size={14} color={c.accentHi}/>Refresh</Btn>
       </div>
-
-      <div style={{background:TF.c.surface,border:`1px solid ${TF.c.border}`,borderRadius:"12px",padding:"16px",marginBottom:"24px",display:"flex",gap:"12px",alignItems:"flex-start"}}>
-        <ImgIcon name="info" size={18} color={TF.c.info} title="Info" />
-        <p style={{color:TF.c.textMuted,fontSize:"13px",margin:0,lineHeight:"1.65"}}>
-          <strong style={{color:TF.c.text}}>Note:</strong> Sample fares below. Use the links for live pricing. For app integration, see the{" "}
-          <a href="https://developers.amadeus.com" target="_blank" rel="noreferrer" style={{color:TF.c.accentHi}}>Amadeus Flight API</a>.
-        </p>
-      </div>
-
-      <div style={{display:"flex",flexDirection:"column",gap:"14px"}}>
-        {mockFlights.map((f, i) => (
-          <div
-            key={`${f.airline}-${i}`}
-            className="tf-flight-card"
-            style={{
-              background:TF.c.surface,
-              border:`1px solid ${TF.c.border}`,
-              borderRadius:"16px",
-              overflow:"hidden",
-              boxShadow: i===2 ? `0 0 0 1px ${TF.c.accentBorder}` : "none",
-            }}
-          >
-            <div
-              className="tf-flight-media"
-              style={{
-                position: "relative",
-                borderRight: `1px solid ${TF.c.border}`,
-              }}
-            >
-              {i === 2 && (
-                <div
-                  style={{
-                    position: "absolute",
-                    top: 10,
-                    left: 10,
-                    zIndex: 2,
-                    background: TF.c.accent,
-                    color: TF.c.onAccent,
-                    fontSize: "9px",
-                    fontWeight: 800,
-                    padding: "5px 8px",
-                    borderRadius: "6px",
-                    letterSpacing: "0.08em",
-                  }}
-                >
-                  BEST VALUE
-                </div>
-              )}
-              <MediaCover
-                src={airlineAircraftImage(f.airline)}
-                alt={`${f.airline} aircraft`}
-                height={136}
-                minHeight={136}
-                iconName="plane"
-              />
+      {recs?.error&&<p style={{color:c.danger}}>{recs.error}</p>}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(290px,1fr))",gap:14,marginBottom:20}}>
+        {recs?.restaurants?.map((r,i)=>(
+          <div key={i} style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:16,padding:20}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+              <div>
+                <div style={{color:c.text,fontWeight:700,fontSize:16}}>{r.name}</div>
+                <div style={{color:c.textMuted,fontSize:13,marginTop:3}}>{r.cuisine} · {r.neighborhood}</div>
+              </div>
+              <span style={{color:pc(r.priceRange),fontWeight:800,fontSize:15,flexShrink:0,marginLeft:8}}>{r.priceRange}</span>
             </div>
-            <div
-              style={{
-                flex: 1,
-                padding: "18px 20px",
-                display: "flex",
-                flexWrap: "wrap",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: "16px",
-              }}
-            >
-              <div style={{ minWidth: "160px" }}>
-                <div style={{ color: TF.c.text, fontWeight: 700, fontSize: "16px", letterSpacing: "-0.02em" }}>{f.airline}</div>
-                <div style={{ color: TF.c.textMuted, fontSize: "13px", marginTop: "4px" }}>
-                  {f.stops === 0 ? "Nonstop" : `${f.stops} stop`} · {f.duration}
-                </div>
-              </div>
-              <div style={{ display: "flex", gap: "24px", alignItems: "center", flexWrap: "wrap" }}>
-                <div style={{ textAlign: "center", minWidth: "56px" }}>
-                  <div style={{ color: TF.c.textSubtle, fontSize: "10px", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>Depart</div>
-                  <div style={{ color: TF.c.text, fontWeight: 700, fontSize: "18px", fontVariantNumeric: "tabular-nums" }}>{f.depart}</div>
-                  <div style={{ color: TF.c.textMuted, fontSize: "12px" }}>{f.from}</div>
-                </div>
-                <div style={{ color: TF.c.textSubtle, fontSize: "20px", fontWeight: 200, lineHeight: 1 }} aria-hidden>→</div>
-                <div style={{ textAlign: "center", minWidth: "56px" }}>
-                  <div style={{ color: TF.c.textSubtle, fontSize: "10px", fontWeight: 600, letterSpacing: "0.06em", textTransform: "uppercase" }}>Arrive</div>
-                  <div style={{ color: TF.c.text, fontWeight: 700, fontSize: "18px", fontVariantNumeric: "tabular-nums" }}>{f.arrive}</div>
-                  <div style={{ color: TF.c.textMuted, fontSize: "12px" }}>{f.to}</div>
-                </div>
-              </div>
-              <div style={{ textAlign: "right", minWidth: "120px" }}>
-                <div style={{ color: TF.c.accentHi, fontWeight: 800, fontSize: "24px", fontVariantNumeric: "tabular-nums" }}>${f.price}</div>
-                <div style={{ color: f.refundable ? TF.c.success : TF.c.danger, fontSize: "11px", margin: "6px 0 10px", fontWeight: 600 }}>
-                  {f.refundable ? "Refundable" : "Non-refundable"}
-                </div>
-                <a
-                  href={f.link}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{
-                    display: "inline-block",
-                    padding: "9px 18px",
-                    background: `linear-gradient(135deg, ${TF.c.accent}, ${TF.c.accentHi})`,
-                    borderRadius: "10px",
-                    color: TF.c.onAccent,
-                    textDecoration: "none",
-                    fontSize: "13px",
-                    fontWeight: 700,
-                  }}
-                >
-                  Book
-                </a>
-              </div>
-            </div>
+            {r.mustTry&&<div style={{background:c.accentLow,border:`1px solid ${c.accentBorder}`,borderRadius:9,padding:"8px 12px",marginBottom:10}}><span style={{color:c.accent,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>Must try: </span><span style={{color:c.text,fontSize:13}}>{r.mustTry}</span></div>}
+            {r.tip&&<p style={{color:c.textMuted,fontSize:13,margin:0,lineHeight:1.6}}>💡 {r.tip}</p>}
           </div>
         ))}
+      </div>
+      <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:12,padding:16}}>
+        <p style={{color:c.textMuted,fontSize:13,margin:0,lineHeight:1.6}}><strong style={{color:c.text}}>Book a table: </strong>
+          {[{name:"OpenTable",url:`https://www.opentable.com/s?term=${encodeURIComponent(form.destination||"")}`},{name:"Yelp",url:`https://www.yelp.com/search?find_desc=Restaurants&find_loc=${encodeURIComponent(form.destination||"")}`},{name:"TripAdvisor",url:`https://www.tripadvisor.com/Search?q=${encodeURIComponent((form.destination||"")+" restaurants")}`}].map((s,i)=><span key={s.name}><a href={s.url} target="_blank" rel="noopener noreferrer" style={{color:c.accentHi,fontWeight:600}}>{s.name}</a>{i<2?" · ":""}</span>)}
+        </p>
       </div>
     </div>
   );
 }
 
-// ── Hotels Tab ────────────────────────────────────────────────────────────────
-function HotelsTab({ form, settings }) {
-  const hotels = [
-    { name:"Le Grand Palace", stars:5, rating:9.4, reviews:2341, price:289, refundable:true, amenities:[{icon:"pool",label:"Pool"},{icon:"restaurant",label:"Restaurant"},{icon:"spa",label:"Spa"},{icon:"parking",label:"Parking"}], imageUrl: unsplashPhoto("photo-1566073771259-6a8506099945", 1200, 800), link:`https://www.booking.com/search.html?ss=${encodeURIComponent(form.destination||"")}` },
-    { name:"Boutique Central", stars:4, rating:9.1, reviews:876, price:145, refundable:true, amenities:[{icon:"breakfast",label:"Breakfast"},{icon:"wifi",label:"Wi‑Fi"},{icon:"bike",label:"Bikes"}], imageUrl: unsplashPhoto("photo-1618773928121-c32242e63f39", 1200, 800), link:`https://www.booking.com/search.html?ss=${encodeURIComponent(form.destination||"")}` },
-    { name:"Urban Loft Hotel", stars:4, rating:8.8, reviews:1203, price:118, refundable:false, amenities:[{icon:"wifi",label:"Wi‑Fi"},{icon:"gym",label:"Gym"},{icon:"coffee",label:"Coffee"}], imageUrl: unsplashPhoto("photo-1520250497591-112f2f40a3f4", 1200, 800), link:`https://www.hotels.com/search.do?q-destination=${encodeURIComponent(form.destination||"")}` },
-    { name:"The Traveler's Inn", stars:3, rating:8.5, reviews:4520, price:74, refundable:true, amenities:[{icon:"wifi",label:"Wi‑Fi"},{icon:"breakfast",label:"Breakfast"}], imageUrl: unsplashPhoto("photo-1590490360182-c33d57733427", 1200, 800), link:`https://www.tripadvisor.com/Search?q=${encodeURIComponent(form.destination||"")}+hotels` },
-  ].filter(h => !settings.refundableOnly || h.refundable);
+// ─── Flights Tab — real aircraft photos with airline name overlay ──────────────
+function FlightsTab({ form, settings }) {
+  const { c, fontBody } = useTokens();
+  const skUrl = AFF.skyscanner(form.from,form.destination,form.dateFrom);
+  const flights = [
+    { airline:"Delta Airlines",    from:form.from||"JFK", to:form.destination||"Destination", depart:"08:15", arrive:"14:30",   duration:"6h 15m",  stops:0, price:487, refundable:true  },
+    { airline:"American Airlines", from:form.from||"JFK", to:form.destination||"Destination", depart:"11:40", arrive:"18:55",   duration:"7h 15m",  stops:1, price:342, refundable:false },
+    { airline:"United Airlines",   from:form.from||"JFK", to:form.destination||"Destination", depart:"22:00", arrive:"12:20+1", duration:"14h 20m", stops:1, price:299, refundable:false },
+    { airline:"Lufthansa",         from:form.from||"JFK", to:form.destination||"Destination", depart:"16:50", arrive:"08:30+1", duration:"15h 40m", stops:0, price:612, refundable:true  },
+  ].filter(f=>(!settings.refundableOnly||f.refundable)&&(!settings.directOnly||f.stops===0));
 
   return (
     <div>
-      <div style={{display:"flex",gap:"12px",marginBottom:"24px",flexWrap:"wrap"}}>
-        {[
-          {name:"Booking.com",url:`https://www.booking.com/search.html?ss=${encodeURIComponent(form.destination||"")}`,color:"#003580"},
-          {name:"Hotels.com",url:`https://www.hotels.com/search.do?q-destination=${encodeURIComponent(form.destination||"")}`,color:"#c8102e"},
-          {name:"Expedia",url:`https://www.expedia.com/Hotels-Search?destination=${encodeURIComponent(form.destination||"")}`,color:"#003087"},
-          {name:"TripAdvisor",url:`https://www.tripadvisor.com/Search?q=${encodeURIComponent(form.destination||"")}+hotels`,color:"#34e0a1"},
-          {name:"Priceline",url:`https://www.priceline.com/relax/in/${encodeURIComponent(form.destination||"")}`,color:"#0066cc"},
-        ].map(site => (
-          <a key={site.name} href={site.url} target="_blank" rel="noopener noreferrer"
-            style={{padding:"10px 16px",background:TF.c.surface,border:`1px solid ${TF.c.border}`,borderRadius:"10px",color:TF.c.textMuted,textDecoration:"none",fontSize:"13px",fontWeight:600}}>
-            {site.name}
+      <AdSlot/>
+      <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
+        {[{name:"🔍 Skyscanner",url:skUrl,primary:true},{name:"Google Flights",url:AFF.googleFlights(form.from,form.destination)},{name:"Expedia",url:AFF.expediaFlights(form.from,form.destination)},{name:"Kayak",url:"https://www.kayak.com/flights"}].map(s=>(
+          <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
+            style={{padding:"10px 18px",background:s.primary?c.accentLow:c.surface,border:`1.5px solid ${s.primary?c.accentBorder:c.border}`,borderRadius:10,color:s.primary?c.accentHi:c.textMuted,textDecoration:"none",fontSize:13,fontWeight:700,fontFamily:fontBody}}>
+            {s.name}
           </a>
         ))}
       </div>
-
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:"16px"}}>
-        {hotels.map((h, i) => (
-          <div key={i} style={{background:TF.c.surface,border:`1px solid ${i===1?TF.c.accentBorder:TF.c.border}`,borderRadius:"14px",overflow:"hidden"}}>
-            {i===1 && (
-              <div style={{background:TF.c.accentLow,borderBottom:`1px solid ${TF.c.accentBorder}`,padding:"8px 16px",fontSize:"10px",fontWeight:700,color:TF.c.accentHi,letterSpacing:"0.08em"}}>
-                BEST VALUE
+      <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:10,padding:"12px 16px",marginBottom:18,display:"flex",gap:10}}>
+        <Icon name="info" size={16} color={c.info}/>
+        <p style={{color:c.textMuted,fontSize:13,margin:0,lineHeight:1.6}}>Sample fares for reference — use the links above for live pricing.</p>
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        {flights.map((f,i)=>(
+          <div key={i} style={{background:c.surface,border:`1.5px solid ${i===2?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden",position:"relative"}}>
+            {i===2&&<div style={{position:"absolute",top:14,right:14,zIndex:3,background:c.accent,color:"#fff",fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:20,letterSpacing:"0.08em"}}>BEST VALUE</div>}
+            {/* Real aircraft photo with gradient overlay */}
+            <div style={{position:"relative",height:168,overflow:"hidden"}}>
+              <Img src={AIRLINE_PHOTOS[f.airline]} fallbackSrc={AIRLINE_PHOTOS["_fallback"]} alt={`${f.airline} aircraft`} iconName="plane"/>
+              <div style={{position:"absolute",inset:0,background:"linear-gradient(to right,rgba(0,0,0,0.75) 0%,rgba(0,0,0,0.15) 65%,transparent 100%)"}}/>
+              <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"14px 20px"}}>
+                <div style={{color:"#fff",fontWeight:800,fontSize:20,letterSpacing:"-0.02em",textShadow:"0 1px 4px rgba(0,0,0,0.4)"}}>{f.airline}</div>
+                <div style={{color:"rgba(255,255,255,0.78)",fontSize:13,marginTop:2}}>{f.stops===0?"Nonstop":"1 stop"} · {f.duration}</div>
               </div>
-            )}
-            <div style={{ height: 148, position: "relative", overflow: "hidden" }}>
-              <MediaCover src={h.imageUrl} alt="" height={148} minHeight={148} iconName="hotel" />
-              <div style={{ position: "absolute", inset: 0, zIndex: 1, pointerEvents: "none", background: "linear-gradient(to top, rgba(11,12,15,0.88) 0%, transparent 55%)" }} />
             </div>
-            <div style={{padding:"18px"}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:"8px"}}>
-                <div>
-                  <h3 style={{color:TF.c.text,margin:"0 0 6px",fontSize:"16px",fontWeight:600,letterSpacing:"-0.02em"}}>{h.name}</h3>
-                  <div style={{color:TF.c.textMuted,fontSize:"12px",fontWeight:500}}>{h.stars}-star property</div>
+            {/* Flight details */}
+            <div style={{padding:"16px 20px",display:"flex",flexWrap:"wrap",alignItems:"center",justifyContent:"space-between",gap:14}}>
+              <div style={{display:"flex",gap:20,alignItems:"center"}}>
+                <div style={{textAlign:"center"}}>
+                  <div style={{color:c.textSubtle,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Depart</div>
+                  <div style={{color:c.text,fontWeight:900,fontSize:22,letterSpacing:"-0.02em"}}>{f.depart}</div>
+                  <div style={{color:c.textMuted,fontSize:12}}>{f.from}</div>
                 </div>
-                <div style={{textAlign:"right"}}>
-                  <div style={{color:TF.c.accentHi,fontWeight:800,fontSize:"20px",fontVariantNumeric:"tabular-nums"}}>${h.price}</div>
-                  <div style={{color:TF.c.textMuted,fontSize:"11px"}}>/ night</div>
+                <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                  <div style={{color:c.textSubtle,fontSize:10}}>────</div>
+                  <Icon name="plane" size={14} color={c.accent}/>
+                </div>
+                <div style={{textAlign:"center"}}>
+                  <div style={{color:c.textSubtle,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Arrive</div>
+                  <div style={{color:c.text,fontWeight:900,fontSize:22,letterSpacing:"-0.02em"}}>{f.arrive}</div>
+                  <div style={{color:c.textMuted,fontSize:12}}>{f.to}</div>
                 </div>
               </div>
-              <div style={{display:"flex",alignItems:"center",gap:"8px",marginBottom:"12px"}}>
-                <span style={{background:"rgba(74, 222, 128, 0.14)",color:TF.c.success,padding:"4px 10px",borderRadius:"8px",fontSize:"12px",fontWeight:700}}>{h.rating}</span>
-                <span style={{color:TF.c.textMuted,fontSize:"12px"}}>{h.reviews.toLocaleString()} reviews</span>
-              </div>
-              <div style={{display:"flex",flexWrap:"wrap",gap:"8px",marginBottom:"16px"}}>
-                {h.amenities.map((a) => (
-                  <span key={a.label} style={{background:TF.c.bg2,border:`1px solid ${TF.c.border}`,borderRadius:"999px",padding:"5px 10px",fontSize:"11px",color:TF.c.textMuted,display:"inline-flex",alignItems:"center",gap:"6px"}}>
-                    <ImgIcon name={a.icon} size={14} color={TF.c.textMuted} title={a.label} />
-                    <span>{a.label}</span>
-                  </span>
-                ))}
-              </div>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span style={{fontSize:"12px",fontWeight:600,color: h.refundable?TF.c.success:TF.c.danger}}>{h.refundable?"Free cancellation":"Non-refundable"}</span>
-                <a href={h.link} target="_blank" rel="noopener noreferrer"
-                  style={{padding:"8px 16px",background:`linear-gradient(135deg, ${TF.c.accent}, ${TF.c.accentHi})`,borderRadius:"8px",color:TF.c.onAccent,textDecoration:"none",fontSize:"13px",fontWeight:700}}>
-                  View
+              <div style={{textAlign:"right"}}>
+                <div style={{color:c.accent,fontWeight:900,fontSize:26,letterSpacing:"-0.03em"}}>${f.price}</div>
+                <div style={{color:f.refundable?c.success:c.danger,fontSize:12,fontWeight:700,margin:"4px 0 10px"}}>{f.refundable?"✓ Refundable":"Non-refundable"}</div>
+                <a href={skUrl} target="_blank" rel="noopener noreferrer"
+                  style={{display:"inline-block",padding:"10px 22px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800,boxShadow:`0 6px 20px ${c.accentBorder}`}}>
+                  Book →
                 </a>
               </div>
             </div>
@@ -843,50 +732,102 @@ function HotelsTab({ form, settings }) {
   );
 }
 
-// ── Cars Tab ──────────────────────────────────────────────────────────────────
+// ─── Hotels Tab — real hotel exterior photos ──────────────────────────────────
+function HotelsTab({ form, settings }) {
+  const { c, fontBody } = useTokens();
+  const hotels = [
+    { name:"Le Grand Palace",    stars:5, rating:9.4, reviews:2341, price:289, refundable:true,  amenities:["wifi","pool","gym","coffee"], img:HOTEL_PHOTOS[0] },
+    { name:"Boutique Central",   stars:4, rating:9.1, reviews:876,  price:145, refundable:true,  amenities:["wifi","coffee"],              img:HOTEL_PHOTOS[1] },
+    { name:"Urban Loft Hotel",   stars:4, rating:8.8, reviews:1203, price:118, refundable:false, amenities:["wifi","gym"],                 img:HOTEL_PHOTOS[2] },
+    { name:"The Traveler's Inn", stars:3, rating:8.5, reviews:4520, price:74,  refundable:true,  amenities:["wifi","coffee"],              img:HOTEL_PHOTOS[3] },
+  ].filter(h=>!settings.refundableOnly||h.refundable);
+
+  return (
+    <div>
+      <AdSlot/>
+      <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
+        {[{name:"Booking.com",url:AFF.bookingHotels(form.destination)},{name:"Expedia",url:AFF.expediaHotels(form.destination)},{name:"Hotels.com",url:`https://www.hotels.com/search.do?q-destination=${encodeURIComponent(form.destination||"")}`},{name:"TripAdvisor",url:`https://www.tripadvisor.com/Search?q=${encodeURIComponent((form.destination||"")+" hotels")}`},{name:"Priceline",url:`https://www.priceline.com/relax/in/${encodeURIComponent(form.destination||"")}`}].map(s=>(
+          <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
+            style={{padding:"10px 16px",background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:10,color:c.textMuted,textDecoration:"none",fontSize:13,fontWeight:600,fontFamily:fontBody}}>
+            {s.name}
+          </a>
+        ))}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:16}}>
+        {hotels.map((h,i)=>(
+          <div key={i} style={{background:c.surface,border:`1.5px solid ${i===1?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden"}}>
+            {i===1&&<div style={{background:c.accent,padding:"7px 18px",fontSize:10,fontWeight:800,color:"#fff",letterSpacing:"0.1em",textAlign:"center"}}>★ BEST VALUE</div>}
+            <div style={{height:168,position:"relative",overflow:"hidden"}}>
+              <Img src={h.img} fallbackSrc={HOTEL_PHOTOS[3]} alt={h.name} iconName="hotel"/>
+              <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(0,0,0,0.72) 0%,transparent 55%)",pointerEvents:"none"}}/>
+              <div style={{position:"absolute",bottom:14,left:16,right:16}}>
+                <div style={{color:"#fff",fontWeight:800,fontSize:17,textShadow:"0 1px 4px rgba(0,0,0,0.5)"}}>{h.name}</div>
+                <div style={{color:"rgba(255,255,255,0.8)",fontSize:12}}>{"★".repeat(h.stars)} {h.stars}-star</div>
+              </div>
+            </div>
+            <div style={{padding:18}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{background:"rgba(34,211,160,0.15)",color:c.success,padding:"4px 10px",borderRadius:8,fontSize:13,fontWeight:800}}>{h.rating}</span>
+                  <span style={{color:c.textMuted,fontSize:12}}>{h.reviews.toLocaleString()} reviews</span>
+                </div>
+                <div><span style={{color:c.accent,fontWeight:900,fontSize:22}}>${h.price}</span><span style={{color:c.textMuted,fontSize:11}}>/night</span></div>
+              </div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
+                {h.amenities.map(a=><span key={a} style={{background:c.bg2,border:`1px solid ${c.border}`,borderRadius:999,padding:"4px 10px",fontSize:11,color:c.textMuted,display:"inline-flex",alignItems:"center",gap:5}}><Icon name={a} size={12} color={c.textMuted}/>{a}</span>)}
+              </div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontSize:12,fontWeight:700,color:h.refundable?c.success:c.danger}}>{h.refundable?"Free cancellation":"Non-refundable"}</span>
+                <a href={AFF.bookingHotels(form.destination)} target="_blank" rel="noopener noreferrer"
+                  style={{padding:"9px 18px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:13,fontWeight:800}}>
+                  View →
+                </a>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ─── Cars Tab — real specific car photos ─────────────────────────────────────
 function CarsTab({ form }) {
-  const dest = encodeURIComponent(form.destination || "");
+  const { c, fontBody } = useTokens();
   const cars = [
-    { type:"Economy", example:"Toyota Yaris", price:28, link:`https://www.kayak.com/cars/${dest}`, imageUrl: unsplashPhoto("photo-1449965408869-eaa3f722e40d", 960, 600) },
-    { type:"Compact SUV", example:"Nissan Rogue", price:52, link:`https://www.costcotravel.com/Rental-Cars`, imageUrl: unsplashPhoto("photo-1519641471654-76ce0107ad1b", 960, 600) },
-    { type:"Midsize", example:"Toyota Camry", price:41, link:`https://www.rentalcars.com/en/`, imageUrl: unsplashPhoto("photo-1494976388531-d0858494cdd9", 960, 600) },
-    { type:"Luxury", example:"BMW 5 Series", price:115, link:`https://www.expedia.com/Cars`, imageUrl: unsplashPhoto("photo-1555215695-3004980ad54e", 960, 600) },
+    { type:"Economy",     ex:"Toyota Yaris", price:28,  img:CAR_PHOTOS["Toyota Yaris"], fb:CAR_PHOTOS["_fallback"] },
+    { type:"Compact SUV", ex:"Nissan Rogue", price:52,  img:CAR_PHOTOS["Nissan Rogue"], fb:CAR_PHOTOS["_fallback"] },
+    { type:"Midsize",     ex:"Toyota Camry", price:41,  img:CAR_PHOTOS["Toyota Camry"], fb:CAR_PHOTOS["_fallback"] },
+    { type:"Luxury",      ex:"BMW 5 Series", price:115, img:CAR_PHOTOS["BMW 5 Series"], fb:CAR_PHOTOS["_fallback"] },
   ];
   return (
     <div>
-      <div style={{display:"flex",gap:"12px",marginBottom:"24px",flexWrap:"wrap"}}>
-        {[
-          {name:"Costco Travel",url:"https://www.costcotravel.com/Rental-Cars",badge:"Members save up to 25%"},
-          {name:"Kayak Cars",url:`https://www.kayak.com/cars/${dest}`},
-          {name:"RentalCars.com",url:`https://www.rentalcars.com`},
-          {name:"Expedia Cars",url:"https://www.expedia.com/Cars"},
-          {name:"Priceline",url:"https://www.priceline.com/drive"},
-        ].map(site => (
-          <a key={site.name} href={site.url} target="_blank" rel="noopener noreferrer"
-            style={{padding:"10px 16px",background:TF.c.surface,border:`1px solid ${TF.c.border}`,borderRadius:"10px",color:TF.c.text,textDecoration:"none",fontSize:"13px",display:"flex",flexDirection:"column",gap:"4px"}}>
-            <span style={{fontWeight:600}}>{site.name}</span>
-            {site.badge && <span style={{color:TF.c.success,fontSize:"11px",fontWeight:500}}>{site.badge}</span>}
+      <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
+        {[{name:"Costco Travel",url:"https://www.costcotravel.com/Rental-Cars",badge:"Save up to 25%"},{name:"Kayak",url:AFF.kayakCars(form.destination)},{name:"RentalCars",url:"https://www.rentalcars.com"},{name:"Expedia Cars",url:"https://www.expedia.com/Cars"}].map(s=>(
+          <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
+            style={{padding:"10px 16px",background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:10,color:c.text,textDecoration:"none",fontSize:13,display:"flex",flexDirection:"column",gap:3,fontFamily:fontBody}}>
+            <span style={{fontWeight:700}}>{s.name}</span>
+            {s.badge&&<span style={{color:c.success,fontSize:11,fontWeight:600}}>{s.badge}</span>}
           </a>
         ))}
       </div>
-      <div style={{background:TF.c.surface,border:`1px solid ${TF.c.border}`,borderRadius:"12px",padding:"16px",marginBottom:"24px"}}>
-        <p style={{color:TF.c.textMuted,fontSize:"13px",margin:0,lineHeight:"1.6"}}>
-          <strong style={{color:TF.c.text}}>Tip:</strong> Compare member programs (e.g. Costco) and card travel portals—rates vary by city and dates.
-        </p>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:"16px"}}>
-        {cars.map((c,i) => (
-          <div key={i} style={{background:TF.c.surface,border:`1px solid ${TF.c.border}`,borderRadius:"16px",overflow:"hidden",textAlign:"left"}}>
-            <MediaCover src={c.imageUrl} alt={`${c.type} rental`} height={140} minHeight={140} iconName="car" />
-            <div style={{padding:"18px"}}>
-              <div style={{color:TF.c.text,fontWeight:700,fontSize:"15px",marginBottom:"4px"}}>{c.type}</div>
-              <div style={{color:TF.c.textMuted,fontSize:"13px",marginBottom:"12px"}}>{c.example}</div>
-              <div style={{color:TF.c.accentHi,fontWeight:800,fontSize:"20px",marginBottom:"14px",fontVariantNumeric:"tabular-nums"}}>
-                from ${c.price}<span style={{color:TF.c.textMuted,fontSize:"12px",fontWeight:500}}>/day</span>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:16}}>
+        {cars.map((car,i)=>(
+          <div key={i} style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:18,overflow:"hidden"}}>
+            <div style={{height:168,position:"relative",overflow:"hidden"}}>
+              <Img src={car.img} fallbackSrc={car.fb} alt={car.ex} iconName="car"/>
+              <div style={{position:"absolute",inset:0,background:"linear-gradient(to bottom,rgba(0,0,0,0.55) 0%,transparent 50%)"}}/>
+              <div style={{position:"absolute",top:14,left:14}}>
+                <span style={{background:"rgba(0,0,0,0.65)",color:"#fff",fontSize:11,fontWeight:800,padding:"5px 12px",borderRadius:20,backdropFilter:"blur(6px)",letterSpacing:"0.05em"}}>{car.type.toUpperCase()}</span>
               </div>
-              <a href={c.link} target="_blank" rel="noopener noreferrer"
-                style={{display:"block",textAlign:"center",padding:"10px",background:`linear-gradient(135deg, ${TF.c.accent}, ${TF.c.accentHi})`,borderRadius:"8px",color:TF.c.onAccent,textDecoration:"none",fontSize:"13px",fontWeight:700}}>
-                Compare
+            </div>
+            <div style={{padding:18}}>
+              <div style={{color:c.text,fontWeight:700,fontSize:16}}>{car.ex}</div>
+              <div style={{color:c.textMuted,fontSize:13,margin:"4px 0 14px"}}>or similar</div>
+              <div style={{color:c.accent,fontWeight:900,fontSize:22,marginBottom:14}}>from ${car.price}<span style={{color:c.textMuted,fontSize:12,fontWeight:500}}>/day</span></div>
+              <a href={AFF.kayakCars(form.destination)} target="_blank" rel="noopener noreferrer"
+                style={{display:"block",textAlign:"center",padding:"11px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800}}>
+                Compare rates →
               </a>
             </div>
           </div>
@@ -896,112 +837,47 @@ function CarsTab({ form }) {
   );
 }
 
-// ── Weather Tab ───────────────────────────────────────────────────────────────
-function WeatherTab({ form, apiKey }) {
-  const [weather, setWeather] = useState(null);
+// ─── Weather Tab ──────────────────────────────────────────────────────────────
+function WeatherTab({ form }) {
+  const { c } = useTokens();
+  const [wx, setWx] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [aiTips, setAiTips] = useState("");
-  const [tipsLoading, setTipsLoading] = useState(false);
 
-  async function fetchWeather() {
+  async function fetch_() {
     if (!form.destination) return;
     setLoading(true);
     try {
-      // Geocode destination using Open-Meteo geocoding (free)
-      const geoRes = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(form.destination)}&count=1`);
-      const geoData = await geoRes.json();
-      if (!geoData.results?.length) { setWeather({error:"Location not found"}); setLoading(false); return; }
-      const { latitude, longitude, name, country } = geoData.results[0];
-
-      const dateFrom = form.dateFrom || new Date().toISOString().split("T")[0];
-      const dateTo = form.dateTo || new Date(Date.now()+14*864e5).toISOString().split("T")[0];
-
-      const wRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode&timezone=auto&start_date=${dateFrom}&end_date=${dateTo}`);
-      const wData = await wRes.json();
-      setWeather({ name, country, latitude, longitude, daily: wData.daily });
-    } catch(e) { setWeather({error: e.message}); }
+      const geo=await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(form.destination)}&count=1`).then(r=>r.json());
+      if (!geo.results?.length){setWx({error:"Location not found"});setLoading(false);return;}
+      const {latitude,longitude,name,country}=geo.results[0];
+      const df=form.dateFrom||new Date().toISOString().split("T")[0];
+      const dt=form.dateTo||new Date(Date.now()+14*864e5).toISOString().split("T")[0];
+      const w=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode&timezone=auto&start_date=${df}&end_date=${dt}`).then(r=>r.json());
+      setWx({name,country,daily:w.daily});
+    } catch(e){setWx({error:e.message});}
     setLoading(false);
   }
 
-  async function getWeatherTips() {
-    if (!weather || !apiKey) return;
-    setTipsLoading(true);
-    const temps = weather.daily?.temperature_2m_max;
-    const avgTemp = temps ? Math.round(temps.reduce((a,b)=>a+b,0)/temps.length) : "unknown";
-    const raw = await askClaude(
-      "You are a travel weather advisor. Give 3 practical tips in bullet points.",
-      `Trip to ${weather.name} with average temp ${avgTemp}°C, style: ${form.style}. What to pack and prepare for weather?`,
-      apiKey
-    );
-    setAiTips(raw);
-    setTipsLoading(false);
-  }
+  useEffect(()=>{if(form.destination)fetch_();},[form.destination]);
 
-  const weatherIconName = (code) => {
-    if (code === 0) return "sun";
-    if (code <= 3) return "sun";
-    if (code <= 48) return "cloud";
-    if (code <= 67) return "cloud";
-    if (code <= 77) return "cloud";
-    if (code <= 82) return "cloud";
-    return "cloud";
-  };
+  const wi=(code)=>code===0?"☀️":code<=3?"🌤️":code<=48?"☁️":code<=67?"🌧️":"⛈️";
 
-  useEffect(() => { if (form.destination) fetchWeather(); }, [form.destination]);
-
-  if (loading) return (
-    <div style={{display:"flex",flexDirection:"column",gap:"12px"}}>
-      {[...Array(7)].map((_,i) => <Skeleton key={i} h="60px" radius="12px" />)}
-    </div>
-  );
-
-  if (!weather) return (
-    <div style={{textAlign:"center",padding:"80px 20px",color:TF.c.textSubtle}}>
-      <div style={{display:"flex",justifyContent:"center",marginBottom:"16px"}}>
-        <div style={{width:"64px",height:"64px",borderRadius:"16px",background:TF.c.surface,border:`1px solid ${TF.c.border}`,display:"flex",alignItems:"center",justifyContent:"center"}}>
-          <ImgIcon name="sun" size={28} color={TF.c.textMuted} title="Weather" />
-        </div>
-      </div>
-      <p style={{color:TF.c.textMuted}}>Enter a destination above to see the forecast</p>
-    </div>
-  );
-
-  if (weather.error) return (
-    <div style={{textAlign:"center",padding:"40px",color:TF.c.danger,fontWeight:500}}>{weather.error}</div>
-  );
+  if (!form.destination) return <div style={{textAlign:"center",padding:"72px 20px"}}><div style={{fontSize:64,marginBottom:16}}>🌤️</div><p style={{color:c.textMuted,fontSize:15}}>Enter a destination to see the forecast</p></div>;
+  if (loading) return <div style={{display:"flex",flexDirection:"column",gap:10}}>{[...Array(7)].map((_,i)=><Skeleton key={i} h="60px" r="12px"/>)}</div>;
+  if (wx?.error) return <div style={{textAlign:"center",padding:40,color:c.danger}}>{wx.error}</div>;
+  if (!wx) return null;
 
   return (
     <div>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:"24px",flexWrap:"wrap",gap:"12px"}}>
-        <h2 style={{fontFamily:TF.fontSans,color:TF.c.text,margin:0,fontSize:"22px",fontWeight:700,letterSpacing:"-0.02em"}}>
-          {weather.name}, {weather.country}
-        </h2>
-        <button type="button" onClick={getWeatherTips} disabled={tipsLoading}
-          style={{padding:"10px 18px",background:TF.c.accentLow,border:`1px solid ${TF.c.accentBorder}`,borderRadius:"10px",color:TF.c.accentHi,cursor:"pointer",fontSize:"13px",fontWeight:600}}>
-          {tipsLoading ? "Loading tips…" : "Get weather tips"}
-        </button>
-      </div>
-
-      {aiTips && (
-        <div style={{background:TF.c.surface,border:`1px solid ${TF.c.border}`,borderRadius:"12px",padding:"20px",marginBottom:"24px",color:TF.c.textMuted,whiteSpace:"pre-wrap",lineHeight:"1.7",fontSize:"14px"}}>
-          {aiTips}
-        </div>
-      )}
-
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:"12px"}}>
-        {weather.daily?.time?.map((date, i) => (
-          <div key={date} style={{background:TF.c.surface,border:`1px solid ${TF.c.border}`,borderRadius:"12px",padding:"14px",textAlign:"center"}}>
-            <div style={{color:TF.c.textMuted,fontSize:"11px",marginBottom:"6px",fontWeight:500}}>
-              {new Date(date+"T12:00:00").toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"})}
-            </div>
-            <div style={{display:"flex",justifyContent:"center",margin:"10px 0"}}>
-              <ImgIcon name={weatherIconName(weather.daily.weathercode[i])} size={22} color={TF.c.accent} title="Weather" />
-            </div>
-            <div style={{color:TF.c.text,fontWeight:700,fontSize:"15px",fontVariantNumeric:"tabular-nums"}}>{Math.round(weather.daily.temperature_2m_max[i])}°</div>
-            <div style={{color:TF.c.textMuted,fontSize:"13px",fontVariantNumeric:"tabular-nums"}}>{Math.round(weather.daily.temperature_2m_min[i])}°</div>
-            {weather.daily.precipitation_sum[i] > 0 && (
-              <div style={{color:TF.c.info,fontSize:"11px",marginTop:"4px",fontWeight:500}}>{weather.daily.precipitation_sum[i]} mm</div>
-            )}
+      <h2 style={{color:c.text,fontSize:22,fontWeight:800,margin:"0 0 20px",letterSpacing:"-0.03em"}}>{wx.name}, {wx.country}</h2>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:12}}>
+        {wx.daily?.time?.map((date,i)=>(
+          <div key={date} style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:14,padding:"14px 10px",textAlign:"center"}}>
+            <div style={{color:c.textMuted,fontSize:11,fontWeight:600,marginBottom:6}}>{new Date(date+"T12:00:00").toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"})}</div>
+            <div style={{fontSize:28,margin:"8px 0"}}>{wi(wx.daily.weathercode[i])}</div>
+            <div style={{color:c.text,fontWeight:800,fontSize:16}}>{Math.round(wx.daily.temperature_2m_max[i])}°</div>
+            <div style={{color:c.textMuted,fontSize:13}}>{Math.round(wx.daily.temperature_2m_min[i])}°</div>
+            {wx.daily.precipitation_sum[i]>0&&<div style={{color:c.info,fontSize:11,marginTop:4,fontWeight:600}}>{wx.daily.precipitation_sum[i]}mm</div>}
           </div>
         ))}
       </div>
@@ -1009,195 +885,160 @@ function WeatherTab({ form, apiKey }) {
   );
 }
 
-// ── Main App ──────────────────────────────────────────────────────────────────
+// ─── Main App ─────────────────────────────────────────────────────────────────
 export default function TripForge() {
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem("tf_api_key") || "");
-  const [tab, setTab] = useState("itinerary");
+  const { c, dark, font, fontBody } = useTokens();
+  const [, toggleTheme] = useTheme();
+  const [apiKey, setApiKey]   = useState(()=>localStorage.getItem("tf_api_key")||"");
+  const [tab, setTab]         = useState("itinerary");
   const [showSettings, setShowSettings] = useState(false);
   const [tripData, setTripData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [form, setForm] = useState({});
-  const [settings, setSettings] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("tf_settings") || "{}"); } catch { return {}; }
-  });
+  const [loading, setLoading]   = useState(false);
+  const [form, setForm]         = useState({});
+  const [settings, setSettings] = useState(()=>{try{return JSON.parse(localStorage.getItem("tf_settings")||"{}");}catch{return {};}});
+  const ds = {currency:"USD",units:"Fahrenheit",refundableOnly:false,directOnly:false,...settings};
 
-  const defaultSettings = { currency:"USD", units:"Fahrenheit", distance:"Miles", refundableOnly:false, directOnly:false, showAffiliates:true, ...settings };
-
-  function saveApiKey(key) {
-    localStorage.setItem("tf_api_key", key);
-    setApiKey(key);
-  }
-
-  function saveSettings(s) {
-    localStorage.setItem("tf_settings", JSON.stringify(s));
-    setSettings(s);
-  }
+  function saveApiKey(key){localStorage.setItem("tf_api_key",key);setApiKey(key);}
+  function saveSettings(s){localStorage.setItem("tf_settings",JSON.stringify(s));setSettings(s);}
 
   async function handleSearch(formData) {
-    setForm(formData);
-    setLoading(true);
-    setTab("itinerary");
-    setTripData(null);
+    setForm(formData); setLoading(true); setTab("itinerary"); setTripData(null);
     try {
-      const system = `You are a world-class travel planner. Return ONLY valid JSON matching this exact structure:
-{
-  "destination": "string",
-  "summary": "string (2 sentences about the destination)",
-  "budgetBreakdown": {
-    "flights": "~$XXX",
-    "hotels": "~$XXX/night",
-    "food": "~$XX/day",
-    "activities": "~$XXX total"
-  },
-  "days": [
-    {
-      "title": "string",
-      "theme": "string",
-      "activities": [
-        {
-          "time": "string",
-          "name": "string",
-          "description": "string",
-          "cost": "string or null"
-        }
-      ],
-      "notes": "string or null"
-    }
-  ],
-  "tips": ["string", "string", "string"]
-}
-No markdown, no commentary, only the JSON object.`;
+      const nights = formData.dateFrom&&formData.dateTo
+        ? Math.max(1,Math.round((new Date(formData.dateTo)-new Date(formData.dateFrom))/864e5)) : 5;
 
-      const nights = formData.dateFrom && formData.dateTo
-        ? Math.round((new Date(formData.dateTo)-new Date(formData.dateFrom))/864e5)
-        : 5;
+      const dateContext = formData.dateFrom
+        ? `Travel dates: ${formData.dateFrom} to ${formData.dateTo||"open-ended"}. CRITICAL: only suggest attractions, restaurants, and activities that are confirmed open/operating during these specific dates. Mention any seasonal events or weather considerations for that period.`
+        : "Dates flexible — plan for a typical season.";
 
       const dest = formData.surpriseMode
-        ? `Find a great ${formData.style} destination reachable for $${formData.budget} total from ${formData.from || "the US"} for ${formData.travelers} travelers. Pick a specific city.`
-        : formData.destination;
+        ? `Best ${formData.style} destination within $${formData.budget} from ${formData.from||"the US"} for ${formData.travelers} travelers`
+        : formData.multiCity
+          ? `multi-city: ${formData.destinations?.map(d=>d.city).filter(Boolean).join(" → ")}`
+          : formData.destination;
+
+      const system = `You are an expert travel planner. RULES:
+1. All activities, restaurants, and attractions MUST be real places in ${dest} accessible during the given dates.
+2. Use real names — no generic placeholders.
+3. Budget accurately for ${formData.travelers} traveler(s).
+4. Keep descriptions SHORT — max 15 words each. Keep notes null unless essential.
+5. Return ONLY valid JSON. No markdown. No commentary. No trailing commas.
+{"destination":"string","summary":"1 sentence overview + 1 sentence seasonal note","budgetBreakdown":{"flights":"~$XXX","hotels":"~$XXX/night","food":"~$XX/day","activities":"~$XXX total"},"days":[{"title":"string","theme":"string","activities":[{"time":"string","name":"string","description":"string max 15 words","cost":"string or null"}],"notes":null}],"tips":["string","string","string"]}`;
 
       const raw = await askClaude(system,
-        `Plan a ${nights}-night ${formData.style} trip to ${dest} for ${formData.travelers} travelers with a total budget of $${formData.budget}. Dates: ${formData.dateFrom || "flexible"} to ${formData.dateTo || "flexible"}.`,
+        `Plan ${nights}-night ${formData.style} trip to ${dest}. ${formData.travelers} traveler(s). $${formData.budget} total budget. ${dateContext} Origin: ${formData.from||"unspecified"}.`,
         apiKey
       );
       setTripData(parseJSON(raw));
     } catch(e) {
-      setTripData({ destination: formData.destination, summary: "Error: "+e.message, days:[], tips:[] });
+      setTripData({destination:formData.destination,summary:"Error: "+e.message,days:[],tips:[]});
     }
     setLoading(false);
   }
 
-  if (!apiKey) return <ApiKeyModal onSave={saveApiKey} />;
+  if (!apiKey) return <ApiKeyModal onSave={saveApiKey}/>;
 
   const tabs = [
-    { id:"itinerary", label:"Itinerary", icon:"map" },
-    { id:"flights", label:"Flights", icon:"plane" },
-    { id:"hotels", label:"Hotels", icon:"hotel" },
-    { id:"cars", label:"Car Rental", icon:"car" },
-    { id:"weather", label:"Weather", icon:"sun" },
+    {id:"itinerary",   label:"Itinerary",   icon:"map"},
+    {id:"map",         label:"Map",         icon:"pin"},
+    {id:"restaurants", label:"Restaurants", icon:"fork"},
+    {id:"flights",     label:"Flights",     icon:"plane"},
+    {id:"hotels",      label:"Hotels",      icon:"hotel"},
+    {id:"cars",        label:"Cars",        icon:"car"},
+    {id:"weather",     label:"Weather",     icon:"sun"},
   ];
 
   return (
     <>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap');
-        * { box-sizing: border-box; margin: 0; padding: 0; }
-        body { background: ${TF.c.bg}; }
-        @keyframes shimmer { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
-        @keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:none} }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: ${TF.c.bg2}; }
-        ::-webkit-scrollbar-thumb { background: rgba(45, 212, 191, 0.25); border-radius: 3px; }
-        input[type=date]::-webkit-calendar-picker-indicator { filter: invert(0.72); opacity: 0.7; }
-        .tf-flight-card { display: flex; flex-direction: row; align-items: stretch; }
-        .tf-flight-media {
-          width: 148px;
-          flex-shrink: 0;
-        }
-        @media (max-width: 720px) {
-          .tf-flight-card { flex-direction: column; }
-          .tf-flight-media {
-            width: 100% !important;
-            height: 168px !important;
-            border-right: none !important;
-            border-bottom: 1px solid rgba(255,255,255,0.07);
-          }
+        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
+        *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
+        html{scroll-behavior:smooth;-webkit-text-size-adjust:100%;}
+        body{background:${c.bg};font-family:${fontBody};-webkit-font-smoothing:antialiased;moz-osx-font-smoothing:grayscale;}
+        @keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+        @keyframes fadeUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:none}}
+        @keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
+        input[type=date]::-webkit-calendar-picker-indicator{filter:${dark?"invert(0.6)":"none"};opacity:0.6;cursor:pointer;}
+        ::-webkit-scrollbar{width:4px;height:4px;}
+        ::-webkit-scrollbar-thumb{background:${c.accentBorder};border-radius:4px;}
+        select option{background:${c.bg2};color:${c.text};}
+        button,a{-webkit-tap-highlight-color:transparent;}
+        @media print{
+          .no-print,header,footer{display:none!important;}
+          body{background:white!important;}
         }
       `}</style>
 
-      <div style={{
-        minHeight:"100vh", background:TF.c.bg,
-        fontFamily:TF.fontSans, color:TF.c.text,
-        backgroundImage:`radial-gradient(ellipse 80% 50% at 10% -10%, rgba(45,212,191,0.08), transparent), radial-gradient(ellipse 60% 40% at 90% 0%, rgba(56,189,248,0.06), transparent)`
-      }}>
+      <div style={{minHeight:"100vh",background:c.bg,color:c.text,fontFamily:fontBody}}>
+
         {/* Header */}
-        <header style={{
-          borderBottom:`1px solid ${TF.c.border}`,
-          padding:"0 40px", display:"flex", alignItems:"center",
-          justifyContent:"space-between", height:"60px",
-          background:"rgba(11, 12, 15, 0.82)", backdropFilter:"blur(16px)",
-          position:"sticky", top:0, zIndex:100
+        <header className="no-print" style={{
+          position:"sticky",top:0,zIndex:100,
+          background:dark?"rgba(8,10,15,0.92)":"rgba(250,249,247,0.94)",
+          backdropFilter:"blur(20px)",WebkitBackdropFilter:"blur(20px)",
+          borderBottom:`1px solid ${c.border}`,
+          padding:"0 20px",height:60,
+          display:"flex",alignItems:"center",justifyContent:"space-between",
         }}>
-          <div style={{display:"flex",alignItems:"center",gap:"12px"}}>
-            <div style={{width:"36px",height:"36px",borderRadius:"10px",background:TF.c.accentLow,border:`1px solid ${TF.c.accentBorder}`,display:"flex",alignItems:"center",justifyContent:"center"}}>
-              <ImgIcon name="plane" size={18} color={TF.c.accent} title="TripForge" />
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            <div style={{width:36,height:36,borderRadius:10,background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 4px 12px ${c.accentBorder}`}}>
+              <Icon name="globe" size={18} color="#fff"/>
             </div>
-            <span style={{fontFamily:TF.fontSans,color:TF.c.text,fontSize:"18px",fontWeight:700,letterSpacing:"-0.03em"}}>TripForge</span>
-            <span style={{color:TF.c.textSubtle,fontSize:"13px",marginLeft:"2px",fontWeight:500}}>Travel</span>
+            <span style={{fontSize:18,fontWeight:800,letterSpacing:"-0.04em",color:c.text,fontFamily:font}}>TripForge</span>
           </div>
-          <div style={{display:"flex",gap:"8px",alignItems:"center"}}>
-            <button type="button" onClick={() => setShowSettings(!showSettings)}
-              style={{background:"none",border:"none",color:TF.c.textMuted,cursor:"pointer",padding:"8px",borderRadius:"8px"}}>
-              <Icon name="settings" size={20} color={TF.c.textMuted} />
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <button onClick={toggleTheme} style={{background:"none",border:`1.5px solid ${c.border}`,borderRadius:10,padding:"7px 12px",color:c.textMuted,cursor:"pointer",display:"flex",alignItems:"center",gap:7,fontSize:13,fontWeight:600,fontFamily:fontBody}}>
+              <Icon name={dark?"sun":"moon"} size={15} color={c.textMuted}/>
+            </button>
+            <button onClick={()=>setShowSettings(!showSettings)} style={{background:"none",border:"none",color:c.textMuted,cursor:"pointer",padding:"8px",borderRadius:10}}>
+              <Icon name="settings" size={20} color={c.textMuted}/>
             </button>
           </div>
         </header>
 
-        {/* Main */}
-        <main style={{maxWidth:"1200px",margin:"0 auto",padding:"40px 24px",animation:"fadeUp 0.5s ease"}}>
-          <HeroSearch onSearch={handleSearch} loading={loading} />
+        {/* Top ad */}
+        <div style={{maxWidth:1160,margin:"0 auto",padding:"10px 20px 0"}}>
+          <AdSlot style={{margin:0}}/>
+        </div>
 
-          {/* Tabs */}
-          <div style={{display:"flex",gap:"4px",marginBottom:"32px",borderBottom:`1px solid ${TF.c.border}`,overflowX:"auto"}}>
-            {tabs.map(t => (
-              <button type="button" key={t.id} onClick={() => setTab(t.id)}
-                style={{
-                  padding:"12px 18px",background:"none",border:"none",cursor:"pointer",
-                  borderBottom: tab===t.id ? `2px solid ${TF.c.accent}` : "2px solid transparent",
-                  color: tab===t.id ? TF.c.text : TF.c.textMuted,
-                  fontSize:"14px",fontWeight: tab===t.id ? 600:500,
-                  display:"flex",alignItems:"center",gap:"8px",whiteSpace:"nowrap",
-                  transition:"color 0.15s, border-color 0.15s",fontFamily:TF.fontSans
-                }}>
-                <Icon name={t.icon} size={16} color={tab===t.id?TF.c.accent:TF.c.textMuted} />
+        {/* Main */}
+        <main style={{maxWidth:1160,margin:"0 auto",padding:"24px 20px 48px",animation:"fadeUp 0.4s ease"}}>
+          <HeroSearch onSearch={handleSearch} loading={loading}/>
+
+          {/* Tab bar */}
+          <div className="no-print" style={{display:"flex",gap:0,marginBottom:28,borderBottom:`1.5px solid ${c.border}`,overflowX:"auto",WebkitOverflowScrolling:"touch",scrollbarWidth:"none"}}>
+            {tabs.map(t=>(
+              <button key={t.id} onClick={()=>setTab(t.id)} style={{
+                padding:"12px 14px",background:"none",border:"none",cursor:"pointer",
+                borderBottom:`2.5px solid ${tab===t.id?c.accent:"transparent"}`,
+                color:tab===t.id?c.text:c.textMuted,
+                fontSize:13,fontWeight:tab===t.id?700:500,
+                display:"flex",alignItems:"center",gap:7,
+                whiteSpace:"nowrap",fontFamily:fontBody,
+                marginBottom:-2,transition:"color 0.15s,border-color 0.15s",
+                flexShrink:0,
+              }}>
+                <Icon name={t.icon} size={15} color={tab===t.id?c.accent:c.textMuted}/>
                 {t.label}
               </button>
             ))}
           </div>
 
-          {/* Tab Content */}
-          {tab==="itinerary" && <ItineraryTab tripData={tripData} loading={loading} form={form} apiKey={apiKey} />}
-          {tab==="flights" && <FlightsTab form={form} settings={defaultSettings} />}
-          {tab==="hotels" && <HotelsTab form={form} settings={defaultSettings} />}
-          {tab==="cars" && <CarsTab form={form} />}
-          {tab==="weather" && <WeatherTab form={form} apiKey={apiKey} />}
+          {tab==="itinerary"   && <ItineraryTab   tripData={tripData} loading={loading} form={form} apiKey={apiKey}/>}
+          {tab==="map"         && <MapTab         tripData={tripData} form={form}/>}
+          {tab==="restaurants" && <RestaurantsTab form={form} apiKey={apiKey}/>}
+          {tab==="flights"     && <FlightsTab     form={form} settings={ds}/>}
+          {tab==="hotels"      && <HotelsTab      form={form} settings={ds}/>}
+          {tab==="cars"        && <CarsTab        form={form}/>}
+          {tab==="weather"     && <WeatherTab     form={form}/>}
         </main>
 
-        {/* Footer */}
-        <footer style={{borderTop:`1px solid ${TF.c.border}`,padding:"24px 40px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:"12px"}}>
-          <span style={{color:TF.c.textSubtle,fontSize:"12px"}}>© 2026 TripForge</span>
-          <span style={{color:TF.c.textSubtle,fontSize:"11px"}}>Sample prices — confirm on provider sites.</span>
+        <footer style={{borderTop:`1px solid ${c.border}`,padding:"18px 20px",display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,maxWidth:1160,margin:"0 auto"}}>
+          <span style={{color:c.textSubtle,fontSize:12,fontWeight:600}}>© 2026 TripForge</span>
+          <span style={{color:c.textSubtle,fontSize:11}}>Sample prices — confirm on provider sites. Some links are affiliate links.</span>
         </footer>
 
-        {showSettings && (
-          <SettingsPanel
-            settings={defaultSettings}
-            onChange={saveSettings}
-            onClose={() => setShowSettings(false)}
-            apiKey={apiKey}
-            onChangeKey={saveApiKey}
-          />
-        )}
+        {showSettings&&<SettingsPanel settings={ds} onChange={saveSettings} onClose={()=>setShowSettings(false)} apiKey={apiKey} onChangeKey={saveApiKey}/>}
       </div>
     </>
   );
