@@ -3,6 +3,9 @@ import { useEffect, useState, useCallback, useRef } from "react";
 // ─── Model ────────────────────────────────────────────────────────────────────
 const CLAUDE_MODEL = "claude-haiku-4-5-20251001";
 
+// ─── YOUR API KEY — see implementation note at bottom of file ────────────────
+const SITE_API_KEY = "YOUR_ANTHROPIC_API_KEY_HERE";
+
 // ─── Affiliate links ─────────────────────────────────────────────────────────
 const AFF = {
   skyscanner: (from, to, date) =>
@@ -242,30 +245,11 @@ function Field({ icon, value, onChange, placeholder, type="text", style={} }) {
   );
 }
 
-// ─── API Key Modal ────────────────────────────────────────────────────────────
-function ApiKeyModal({ onSave }) {
-  const [key, setKey] = useState("");
-  const { c, font, fontBody } = useTokens();
-  return (
-    <div style={{position:"fixed",inset:0,background:c.overlay,display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:20,fontFamily:fontBody}}>
-      <div style={{background:c.surface,border:`1.5px solid ${c.borderStrong}`,borderRadius:24,padding:"52px 40px",maxWidth:460,width:"100%",textAlign:"center",boxShadow:"0 40px 100px rgba(0,0,0,0.4)"}}>
-        <div style={{width:72,height:72,borderRadius:20,background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,margin:"0 auto 24px",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 12px 32px ${c.accentBorder}`}}>
-          <Icon name="globe" size={32} color="#fff" />
-        </div>
-        <h1 style={{color:c.text,fontSize:28,fontWeight:800,margin:"0 0 10px",letterSpacing:"-0.04em",fontFamily:font}}>TripForge</h1>
-        <p style={{color:c.textMuted,fontSize:15,lineHeight:1.7,margin:"0 0 32px"}}>AI-powered travel planning. Enter your Anthropic API key to get started — it stays in your browser only.</p>
-        <Field icon="globe" value={key} onChange={e=>setKey(e.target.value)} placeholder="sk-ant-api03-..." style={{marginBottom:14}} />
-        <Btn onClick={()=>key.trim()&&onSave(key.trim())} full style={{fontSize:16,padding:"14px",borderRadius:14}}>Start planning →</Btn>
-        <p style={{color:c.textSubtle,fontSize:12,marginTop:18}}>Get a key at <a href="https://console.anthropic.com" target="_blank" rel="noreferrer" style={{color:c.accentHi,fontWeight:600}}>console.anthropic.com</a></p>
-      </div>
-    </div>
-  );
-}
+// ─── API Key Modal removed — key is now set server-side via SITE_API_KEY ────────
 
 // ─── Settings Panel ───────────────────────────────────────────────────────────
-function SettingsPanel({ settings, onChange, onClose, apiKey, onChangeKey }) {
-  const { c, fontBody, fontMono } = useTokens();
-  const [nk, setNk] = useState(apiKey);
+function SettingsPanel({ settings, onChange, onClose }) {
+  const { c, fontBody } = useTokens();
   return (
     <div style={{position:"fixed",top:0,right:0,bottom:0,width:300,background:c.surface,borderLeft:`1.5px solid ${c.border}`,zIndex:900,padding:"28px 22px",fontFamily:fontBody,overflowY:"auto"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:28}}>
@@ -288,11 +272,6 @@ function SettingsPanel({ settings, onChange, onClose, apiKey, onChangeKey }) {
           <span style={{color:c.text,fontSize:14}}>{label}</span>
         </div>
       ))}
-      <div style={{marginTop:26}}>
-        <div style={{color:c.textMuted,fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:10}}>API Key</div>
-        <input value={nk} onChange={e=>setNk(e.target.value)} type="password" style={{width:"100%",padding:"10px 13px",background:c.bg2,border:`1.5px solid ${c.border}`,borderRadius:10,color:c.text,fontSize:13,fontFamily:fontMono,outline:"none",boxSizing:"border-box",marginBottom:10}}/>
-        <Btn onClick={()=>onChangeKey(nk)} variant="ghost" full>Update Key</Btn>
-      </div>
     </div>
   );
 }
@@ -426,7 +405,7 @@ function ItineraryTab({ tripData, loading, form, apiKey }) {
         apiKey
       );
       setExtras(parseJSON(raw));
-    } catch(e) { setExtras({error:e.message}); }
+    } catch(e) { setExtras({_error:true}); }
     setExtrasLoading(false);
   }
 
@@ -449,7 +428,18 @@ function ItineraryTab({ tripData, loading, form, apiKey }) {
     </div>
   );
 
-  const { destination, summary, days, budgetBreakdown, tips } = tripData;
+  const { destination, summary, days, budgetBreakdown, tips, _error } = tripData;
+
+  if (_error) return (
+    <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:20,padding:"40px 32px",textAlign:"center"}}>
+      <div style={{fontSize:48,marginBottom:16}}>✈️</div>
+      <div style={{color:c.text,fontWeight:800,fontSize:20,marginBottom:10}}>We couldn't build your itinerary right now</div>
+      <p style={{color:c.textMuted,fontSize:14,lineHeight:1.7,maxWidth:420,margin:"0 auto 24px"}}>Our AI travel planner is experiencing a brief interruption. Please check your internet connection and try again in a moment.</p>
+      <div style={{background:c.accentLow,border:`1.5px solid ${c.accentBorder}`,borderRadius:12,padding:"12px 18px",display:"inline-block"}}>
+        <span style={{color:c.accentHi,fontSize:13,fontWeight:600}}>Tip: Make sure your destination field is filled in and try again.</span>
+      </div>
+    </div>
+  );
 
   return (
     <div>
@@ -489,6 +479,15 @@ function ItineraryTab({ tripData, loading, form, apiKey }) {
         </a>
       </div>
 
+      {extras?._error && (
+        <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:14,padding:"18px 20px",marginBottom:18,display:"flex",alignItems:"center",gap:14}}>
+          <span style={{fontSize:28,flexShrink:0}}>💡</span>
+          <div>
+            <div style={{color:c.text,fontWeight:700,fontSize:14,marginBottom:4}}>Budget tips temporarily unavailable</div>
+            <p style={{color:c.textMuted,fontSize:13,margin:0,lineHeight:1.6}}>This feature is experiencing a brief interruption. Please try again in a moment.</p>
+          </div>
+        </div>
+      )}
       {extras?.budgetTips && (
         <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:16,padding:22,marginBottom:18}}>
           <div style={{color:c.accent,fontWeight:800,fontSize:12,letterSpacing:"0.08em",textTransform:"uppercase",marginBottom:14}}>💰 Budget Tips</div>
@@ -574,6 +573,7 @@ function MapTab({ tripData, form }) {
   const mapRef = useRef(null);
   const inst = useRef(null);
   const [loaded, setLoaded] = useState(false);
+  const [mapError, setMapError] = useState(false);
 
   useEffect(()=>{
     if (document.getElementById("lf-css")) { setLoaded(true); return; }
@@ -589,7 +589,7 @@ function MapTab({ tripData, form }) {
     if (inst.current) { inst.current.remove(); inst.current=null; }
     fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(form.destination||"")}&count=1`)
       .then(r=>r.json()).then(data=>{
-        const loc=data.results?.[0]; if(!loc) return;
+        const loc=data.results?.[0]; if(!loc) { setMapError(true); return; }
         const map=L.map(mapRef.current).setView([loc.latitude,loc.longitude],12); inst.current=map;
         L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap"}).addTo(map);
         const icon=L.divIcon({html:`<div style="background:#ff6b2b;width:32px;height:32px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);border:3px solid white;box-shadow:0 3px 12px rgba(0,0,0,0.35)"></div>`,iconSize:[32,32],iconAnchor:[16,32],className:""});
@@ -598,6 +598,13 @@ function MapTab({ tripData, form }) {
   },[loaded,tripData,form]);
 
   if (!tripData) return <div style={{textAlign:"center",padding:"72px 20px"}}><div style={{fontSize:64,marginBottom:16}}>🗺️</div><p style={{color:c.textMuted,fontSize:15}}>Plan a trip first to see the map</p></div>;
+  if (mapError) return (
+    <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:20,padding:"40px 24px",textAlign:"center"}}>
+      <div style={{fontSize:48,marginBottom:14}}>🗺️</div>
+      <div style={{color:c.text,fontWeight:700,fontSize:18,marginBottom:8}}>Map temporarily unavailable</div>
+      <p style={{color:c.textMuted,fontSize:14,lineHeight:1.6,maxWidth:380,margin:"0 auto"}}>We couldn't load the map for this destination. This is usually a temporary issue — please try again shortly.</p>
+    </div>
+  );
   return <div ref={mapRef} style={{width:"100%",height:480,borderRadius:18,overflow:"hidden",border:`1.5px solid ${c.border}`}}/>;
 }
 
@@ -617,7 +624,7 @@ function RestaurantsTab({ form, apiKey }) {
         apiKey
       );
       setRecs(parseJSON(raw));
-    } catch(e) { setRecs({error:e.message}); }
+    } catch(e) { setRecs({error:true}); }
     setLoading(false);
   }
 
@@ -634,7 +641,14 @@ function RestaurantsTab({ form, apiKey }) {
         <h2 style={{color:c.text,fontSize:22,fontWeight:800,margin:0,letterSpacing:"-0.03em"}}>Where to eat in {form.destination}</h2>
         <Btn onClick={getRecs} disabled={loading} variant="ghost" style={{fontSize:13,padding:"9px 16px"}}><Icon name="sparkle" size={14} color={c.accentHi}/>Refresh</Btn>
       </div>
-      {recs?.error&&<p style={{color:c.danger}}>{recs.error}</p>}
+      {recs?.error&&(
+        <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:16,padding:"28px 24px",textAlign:"center",marginBottom:20}}>
+          <div style={{fontSize:40,marginBottom:12}}>🍽️</div>
+          <div style={{color:c.text,fontWeight:700,fontSize:16,marginBottom:8}}>Restaurant recommendations are temporarily unavailable</div>
+          <p style={{color:c.textMuted,fontSize:14,lineHeight:1.6,margin:"0 0 18px"}}>We're experiencing a brief interruption with this feature. In the meantime, you can browse top-rated restaurants directly below.</p>
+          <Btn onClick={getRecs} variant="ghost" style={{fontSize:13}}>Try again</Btn>
+        </div>
+      )}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(290px,1fr))",gap:14,marginBottom:20}}>
         {recs?.restaurants?.map((r,i)=>(
           <div key={i} style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:16,padding:20}}>
@@ -848,13 +862,13 @@ function WeatherTab({ form }) {
     setLoading(true);
     try {
       const geo=await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(form.destination)}&count=1`).then(r=>r.json());
-      if (!geo.results?.length){setWx({error:"Location not found"});setLoading(false);return;}
+      if (!geo.results?.length){setWx({error:"We couldn't find weather data for that destination. Please check the spelling and try again."});setLoading(false);return;}
       const {latitude,longitude,name,country}=geo.results[0];
       const df=form.dateFrom||new Date().toISOString().split("T")[0];
       const dt=form.dateTo||new Date(Date.now()+14*864e5).toISOString().split("T")[0];
       const w=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode&timezone=auto&start_date=${df}&end_date=${dt}`).then(r=>r.json());
       setWx({name,country,daily:w.daily});
-    } catch(e){setWx({error:e.message});}
+    } catch(e){setWx({error:'unavailable'});}
     setLoading(false);
   }
 
@@ -864,7 +878,14 @@ function WeatherTab({ form }) {
 
   if (!form.destination) return <div style={{textAlign:"center",padding:"72px 20px"}}><div style={{fontSize:64,marginBottom:16}}>🌤️</div><p style={{color:c.textMuted,fontSize:15}}>Enter a destination to see the forecast</p></div>;
   if (loading) return <div style={{display:"flex",flexDirection:"column",gap:10}}>{[...Array(7)].map((_,i)=><Skeleton key={i} h="60px" r="12px"/>)}</div>;
-  if (wx?.error) return <div style={{textAlign:"center",padding:40,color:c.danger}}>{wx.error}</div>;
+  if (wx?.error) return (
+    <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:20,padding:"40px 24px",textAlign:"center"}}>
+      <div style={{fontSize:48,marginBottom:14}}>🌤️</div>
+      <div style={{color:c.text,fontWeight:700,fontSize:18,marginBottom:8}}>Weather data temporarily unavailable</div>
+      <p style={{color:c.textMuted,fontSize:14,lineHeight:1.6,maxWidth:380,margin:"0 auto 20px"}}>We couldn't retrieve the forecast for this destination right now. Please check the destination name and try again.</p>
+      <Btn onClick={fetch_} variant="ghost" style={{fontSize:13}}>Try again</Btn>
+    </div>
+  );
   if (!wx) return null;
 
   return (
@@ -889,7 +910,7 @@ function WeatherTab({ form }) {
 export default function TripForge() {
   const { c, dark, font, fontBody } = useTokens();
   const [, toggleTheme] = useTheme();
-  const [apiKey, setApiKey]   = useState(()=>localStorage.getItem("tf_api_key")||"");
+  const apiKey = SITE_API_KEY; // Key is set at top of file — no user input needed
   const [tab, setTab]         = useState("itinerary");
   const [showSettings, setShowSettings] = useState(false);
   const [tripData, setTripData] = useState(null);
@@ -898,7 +919,6 @@ export default function TripForge() {
   const [settings, setSettings] = useState(()=>{try{return JSON.parse(localStorage.getItem("tf_settings")||"{}");}catch{return {};}});
   const ds = {currency:"USD",units:"Fahrenheit",refundableOnly:false,directOnly:false,...settings};
 
-  function saveApiKey(key){localStorage.setItem("tf_api_key",key);setApiKey(key);}
   function saveSettings(s){localStorage.setItem("tf_settings",JSON.stringify(s));setSettings(s);}
 
   async function handleSearch(formData) {
@@ -931,12 +951,12 @@ export default function TripForge() {
       );
       setTripData(parseJSON(raw));
     } catch(e) {
-      setTripData({destination:formData.destination,summary:"Error: "+e.message,days:[],tips:[]});
+      setTripData({destination:formData.destination||"Your Trip",_error:true,days:[],tips:[]});
     }
     setLoading(false);
   }
 
-  if (!apiKey) return <ApiKeyModal onSave={saveApiKey}/>;
+  // API key is hardcoded — no modal needed
 
   const tabs = [
     {id:"itinerary",   label:"Itinerary",   icon:"map"},
@@ -1038,7 +1058,7 @@ export default function TripForge() {
           <span style={{color:c.textSubtle,fontSize:11}}>Sample prices — confirm on provider sites. Some links are affiliate links.</span>
         </footer>
 
-        {showSettings&&<SettingsPanel settings={ds} onChange={saveSettings} onClose={()=>setShowSettings(false)} apiKey={apiKey} onChangeKey={saveApiKey}/>}
+        {showSettings&&<SettingsPanel settings={ds} onChange={saveSettings} onClose={()=>setShowSettings(false)}/>}
       </div>
     </>
   );
