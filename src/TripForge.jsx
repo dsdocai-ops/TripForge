@@ -3,25 +3,34 @@ import { useEffect, useState, useCallback, useRef } from "react";
 // ─── Model ────────────────────────────────────────────────────────────────────
 const CLAUDE_MODEL = "claude-haiku-4-5-20251001";
 
-// ─── YOUR API KEY — see implementation note at bottom of file ────────────────
-const SITE_API_KEY = "YOUR_ANTHROPIC_API_KEY_HERE";
+// ─── API config ───────────────────────────────────────────────────────────────
+// Set VITE_PROXY_URL in .env to route calls through your Cloudflare Worker
+// (keeps API key off the client). Falls back to direct browser call.
+const PROXY_URL    = import.meta.env.VITE_PROXY_URL || "";
+const SITE_API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || "YOUR_ANTHROPIC_API_KEY_HERE";
 
-// ─── Affiliate links ─────────────────────────────────────────────────────────
+// ─── Affiliate links (deep-linked with dates + traveler count) ───────────────
 const AFF = {
-  skyscanner: (from, to, date) =>
-    `https://www.skyscanner.com/transport/flights/${encodeURIComponent(from||"")}/${encodeURIComponent(to||"")}/${date?.replace(/-/g,"")||""}/?utm_source=YOURAFFID`,
-  bookingHotels: (dest) =>
-    `https://www.booking.com/search.html?ss=${encodeURIComponent(dest||"")}&aid=YOURAFFID`,
-  expediaHotels: (dest) =>
-    `https://www.expedia.com/Hotels-Search?destination=${encodeURIComponent(dest||"")}&affcid=YOURAFFID`,
-  expediaFlights: (from, to) =>
-    `https://www.expedia.com/Flights-Search?flight-type=on&mode=search&trip=oneway&leg1=from:${encodeURIComponent(from||"")},to:${encodeURIComponent(to||"")}&affcid=YOURAFFID`,
-  kayakCars: (dest) =>
-    `https://www.kayak.com/cars/${encodeURIComponent(dest||"")}?affiliate=YOURAFFID`,
+  skyscanner: (from, to, date, dateReturn="", travelers=1) => {
+    const d1 = (date||"").replace(/-/g,"");
+    const d2 = (dateReturn||"").replace(/-/g,"");
+    const seg = d2 ? `${d1}/${d2}` : d1;
+    return `https://www.skyscanner.com/transport/flights/${encodeURIComponent(from||"")}/${encodeURIComponent(to||"")}/${seg}/?adults=${travelers}&utm_source=YOURAFFID`;
+  },
+  bookingHotels: (dest, checkin="", checkout="", travelers=1) =>
+    `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(dest||"")}&checkin=${checkin}&checkout=${checkout}&group_adults=${travelers}&no_rooms=1&aid=YOURAFFID`,
+  expediaHotels: (dest, checkin="", checkout="", travelers=1) =>
+    `https://www.expedia.com/Hotel-Search?destination=${encodeURIComponent(dest||"")}&startDate=${checkin}&endDate=${checkout}&adults=${travelers}&affcid=YOURAFFID`,
+  expediaFlights: (from, to, date="", travelers=1) =>
+    `https://www.expedia.com/Flights-Search?flight-type=on&mode=search&trip=oneway&leg1=from:${encodeURIComponent(from||"")},to:${encodeURIComponent(to||"")},departure:${date}TANYT&passengers=adults:${travelers},children:0,infantinlap:Y&affcid=YOURAFFID`,
+  kayakCars: (dest, pickup="", dropoff="") => {
+    const base = `https://www.kayak.com/cars/${encodeURIComponent(dest||"")}`;
+    return (pickup && dropoff) ? `${base}/${pickup}/${dropoff}?affiliate=YOURAFFID` : `${base}?affiliate=YOURAFFID`;
+  },
   viator: (dest) =>
     `https://www.viator.com/searchResults/all?text=${encodeURIComponent(dest||"")}&pid=YOURAFFID`,
-  googleFlights: (from, to) =>
-    `https://www.google.com/travel/flights?q=flights+from+${encodeURIComponent(from||"")}+to+${encodeURIComponent(to||"")}`,
+  googleFlights: (from, to, date="") =>
+    `https://www.google.com/travel/flights?q=flights+from+${encodeURIComponent(from||"")}+to+${encodeURIComponent(to||"")}${date?`+on+${date}`:""}`,
 };
 
 // ─── Real aircraft photos ─────────────────────────────────────────────────────
@@ -33,13 +42,13 @@ const AIRLINE_PHOTOS = {
   "_fallback":         "https://images.unsplash.com/photo-1464037866556-abfb2b3b75a3?auto=format&fit=crop&w=900&h=480&q=85",
 };
 
-// ─── Real specific car model photos ──────────────────────────────────────────
+// ─── Car category photos (generic stock, keyed by category) ──────────────────
 const CAR_PHOTOS = {
-  "Toyota Yaris":  "https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=800&h=480&q=85",
-  "Nissan Rogue":  "https://images.unsplash.com/photo-1519641471654-76ce0107ad1b?auto=format&fit=crop&w=800&h=480&q=85",
-  "Toyota Camry":  "https://images.unsplash.com/photo-1494976388531-d0858494cdd9?auto=format&fit=crop&w=800&h=480&q=85",
-  "BMW 5 Series":  "https://images.unsplash.com/photo-1555215695-3004980ad54e?auto=format&fit=crop&w=800&h=480&q=85",
-  "_fallback":     "https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?auto=format&fit=crop&w=800&h=480&q=85",
+  Economy:         "https://images.unsplash.com/photo-1549399542-7e3f8b79c341?auto=format&fit=crop&w=800&h=480&q=85",
+  "Compact SUV":   "https://images.unsplash.com/photo-1519641471654-76ce0107ad1b?auto=format&fit=crop&w=800&h=480&q=85",
+  Midsize:         "https://images.unsplash.com/photo-1494976388531-d0858494cdd9?auto=format&fit=crop&w=800&h=480&q=85",
+  Luxury:          "https://images.unsplash.com/photo-1555215695-3004980ad54e?auto=format&fit=crop&w=800&h=480&q=85",
+  _fallback:       "https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?auto=format&fit=crop&w=800&h=480&q=85",
 };
 
 // ─── Real hotel photos ────────────────────────────────────────────────────────
@@ -113,11 +122,16 @@ function useTokens() {
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
-async function askClaude(system, user, apiKey) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method:"POST",
-    headers:{ "Content-Type":"application/json", "x-api-key":apiKey, "anthropic-version":"2023-06-01", "anthropic-dangerous-direct-browser-access":"true" },
-    body:JSON.stringify({ model:CLAUDE_MODEL, max_tokens:4096, system, messages:[{role:"user",content:user}] }),
+async function askClaude(system, user, apiKey, maxTokens = 4096) {
+  const useProxy = !!PROXY_URL;
+  const url = useProxy ? PROXY_URL : "https://api.anthropic.com/v1/messages";
+  const headers = useProxy
+    ? { "Content-Type": "application/json" }
+    : { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" };
+  const res = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] }),
   });
   if (!res.ok) { const e = await res.json(); throw new Error(e.error?.message||"API error"); }
   const d = await res.json();
@@ -143,6 +157,10 @@ function parseJSON(raw) {
   attempt += opens.reverse().join("");
   return JSON.parse(attempt);
 }
+// ─── Session cache (prevents re-fetching on tab switches) ────────────────────
+function sGet(k) { try { const v = sessionStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } }
+function sSet(k, v) { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch {} }
+function sCacheKey(...parts) { return "tf_" + parts.map(p => String(p||"").toLowerCase().replace(/\s+/g,"_")).join("_"); }
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 function Icon({ name, size=20, color="currentColor" }) {
@@ -173,6 +191,7 @@ function Icon({ name, size=20, color="currentColor" }) {
     gym:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M6 7v10M18 7v10M8 10h8M8 14h8"/><rect x="2" y="9" width="3" height="6" rx="1"/><rect x="19" y="9" width="3" height="6" rx="1"/></svg>,
     users:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>,
     globe:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 014 10 15.3 15.3 0 01-4 10 15.3 15.3 0 01-4-10 15.3 15.3 0 014-10z"/></svg>,
+    share:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><path d="M4 12v8a2 2 0 002 2h12a2 2 0 002-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>,
     calendar:<svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>,
   };
   return <span style={{display:"inline-flex",alignItems:"center",flexShrink:0}}>{icons[name]||null}</span>;
@@ -407,14 +426,19 @@ function ItineraryTab({ tripData, loading, form, apiKey }) {
   const [extrasLoading, setExtrasLoading] = useState(false);
 
   async function getExtras() {
+    const ck = sCacheKey("extras", form.destination, form.style);
+    const hit = sGet(ck);
+    if (hit) { setExtras(hit); return; }
     setExtrasLoading(true); setExtras(null);
     try {
       const raw = await askClaude(
         `Travel expert. Return ONLY JSON: {"budgetTips":["string","string","string"],"packing":{"categories":[{"name":"string","items":["string"]}]}}. No markdown.`,
         `${form.style} trip to ${form.destination}. ${form.travelers} travelers. $${form.budget} budget. ${form.dateFrom||"flexible"} to ${form.dateTo||"flexible"}.`,
-        apiKey
+        apiKey, 1500
       );
-      setExtras(parseJSON(raw));
+      const parsed = parseJSON(raw);
+      sSet(ck, parsed);
+      setExtras(parsed);
     } catch(e) { setExtras({_error:true}); }
     setExtrasLoading(false);
   }
@@ -646,19 +670,24 @@ function RestaurantsTab({ form, apiKey }) {
 
   async function getRecs() {
     if (!form.destination||!apiKey) return;
+    const ck = sCacheKey("recs", form.destination, form.style);
+    const hit = sGet(ck);
+    if (hit) { setRecs(hit); return; }
     setLoading(true); setRecs(null);
     try {
       const raw = await askClaude(
         `Local food expert. Return ONLY JSON: {"restaurants":[{"name":"string","cuisine":"string","priceRange":"$/$$/$$$/$$$$","mustTry":"string","neighborhood":"string","tip":"string"}]}. 6 restaurants. No markdown.`,
         `Best restaurants in ${form.destination} for a ${form.style||"general"} trip.`,
-        apiKey
+        apiKey, 1200
       );
-      setRecs(parseJSON(raw));
+      const parsed = parseJSON(raw);
+      sSet(ck, parsed);
+      setRecs(parsed);
     } catch(e) { setRecs({error:true}); }
     setLoading(false);
   }
 
-  useEffect(()=>{ if(form.destination&&apiKey&&!recs) getRecs(); },[form.destination]);
+  useEffect(()=>{ if(form.destination&&apiKey) getRecs(); },[form.destination]);
 
   if (!form.destination) return <div style={{textAlign:"center",padding:"72px 20px"}}><div style={{fontSize:64,marginBottom:16}}>🍽️</div><p style={{color:c.textMuted,fontSize:15}}>Enter a destination to get restaurant picks</p></div>;
   if (loading) return <div style={{display:"flex",flexDirection:"column",gap:12}}>{[...Array(4)].map((_,i)=><Skeleton key={i} h="100px" r="14px"/>)}</div>;
@@ -703,46 +732,104 @@ function RestaurantsTab({ form, apiKey }) {
   );
 }
 
-// ─── Flights Tab — real aircraft photos with airline name overlay ──────────────
-function FlightsTab({ form, settings }) {
+// ─── Flights Tab — AI-powered flight suggestions ──────────────────────────────
+function FlightsTab({ form, settings, apiKey }) {
   const { c, fontBody } = useTokens();
-  const skUrl = AFF.skyscanner(form.from,form.destination,form.dateFrom);
-  const flights = [
-    { airline:"Delta Airlines",    from:form.from||"JFK", to:form.destination||"Destination", depart:"08:15", arrive:"14:30",   duration:"6h 15m",  stops:0, price:487, refundable:true  },
-    { airline:"American Airlines", from:form.from||"JFK", to:form.destination||"Destination", depart:"11:40", arrive:"18:55",   duration:"7h 15m",  stops:1, price:342, refundable:false },
-    { airline:"United Airlines",   from:form.from||"JFK", to:form.destination||"Destination", depart:"22:00", arrive:"12:20+1", duration:"14h 20m", stops:1, price:299, refundable:false },
-    { airline:"Lufthansa",         from:form.from||"JFK", to:form.destination||"Destination", depart:"16:50", arrive:"08:30+1", duration:"15h 40m", stops:0, price:612, refundable:true  },
-  ].filter(f=>(!settings.refundableOnly||f.refundable)&&(!settings.directOnly||f.stops===0));
+  const [flights, setFlights] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const skUrl = AFF.skyscanner(form.from, form.destination, form.dateFrom, form.dateTo, form.travelers);
+
+  async function fetchFlights() {
+    if (!form.destination || !apiKey) return;
+    const ck = sCacheKey("flights", form.destination, form.from, form.dateFrom);
+    const hit = sGet(ck);
+    if (hit) { setFlights(hit); return; }
+    setLoading(true); setFlights(null);
+    try {
+      const raw = await askClaude(
+        `Flight expert. Return ONLY a JSON array of 4 realistic flight options. Each object: {"airline":"string","from":"string","to":"string","depart":"HH:MM","arrive":"HH:MM","duration":"Xh Ym","stops":0,"estimatedPrice":000,"refundable":true,"flightNumber":"string"}. Use real airlines that serve this route. Vary airlines, stops (0 or 1), and prices. No markdown, no explanation.`,
+        `Flights from ${form.from || "New York"} to ${form.destination}${form.dateFrom ? ` on ${form.dateFrom}` : ""}. ${form.travelers || 2} traveler(s). Travel style: ${form.style || "general"}.`,
+        apiKey, 900
+      );
+      const parsed = parseJSON(raw);
+      const data = Array.isArray(parsed) ? parsed : parsed.flights || [];
+      sSet(ck, data);
+      setFlights(data);
+    } catch(e) { setFlights({ _error: true }); }
+    setLoading(false);
+  }
+
+  useEffect(() => { if (form.destination && apiKey) fetchFlights(); }, [form.destination]);
+
+  const filtered = Array.isArray(flights)
+    ? flights.filter(f => (!settings.refundableOnly || f.refundable) && (!settings.directOnly || f.stops === 0))
+    : [];
+
+  if (!form.destination) return (
+    <div style={{textAlign:"center",padding:"72px 20px"}}>
+      <div style={{fontSize:64,marginBottom:16}}>✈️</div>
+      <p style={{color:c.textMuted,fontSize:15}}>Plan a trip first to see flight options</p>
+    </div>
+  );
 
   return (
     <div>
       <AdSlot/>
-      <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
-        {[{name:"🔍 Skyscanner",url:skUrl,primary:true},{name:"Google Flights",url:AFF.googleFlights(form.from,form.destination)},{name:"Expedia",url:AFF.expediaFlights(form.from,form.destination)},{name:"Kayak",url:"https://www.kayak.com/flights"}].map(s=>(
+      <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
+        {[
+          {name:"🔍 Skyscanner", url:skUrl, primary:true},
+          {name:"Google Flights", url:AFF.googleFlights(form.from, form.destination, form.dateFrom)},
+          {name:"Expedia", url:AFF.expediaFlights(form.from, form.destination, form.dateFrom, form.travelers)},
+          {name:"Kayak", url:"https://www.kayak.com/flights"},
+        ].map(s => (
           <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
             style={{padding:"10px 18px",background:s.primary?c.accentLow:c.surface,border:`1.5px solid ${s.primary?c.accentBorder:c.border}`,borderRadius:10,color:s.primary?c.accentHi:c.textMuted,textDecoration:"none",fontSize:13,fontWeight:700,fontFamily:fontBody}}>
             {s.name}
           </a>
         ))}
+        <Btn onClick={fetchFlights} disabled={loading} variant="ghost" style={{fontSize:13,padding:"9px 16px"}}>
+          <Icon name="sparkle" size={14} color={c.accentHi}/>{loading ? "Searching…" : "Refresh"}
+        </Btn>
       </div>
+
       <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:10,padding:"12px 16px",marginBottom:18,display:"flex",gap:10}}>
         <Icon name="info" size={16} color={c.info}/>
-        <p style={{color:c.textMuted,fontSize:13,margin:0,lineHeight:1.6}}>Sample fares for reference — use the links above for live pricing.</p>
+        <p style={{color:c.textMuted,fontSize:13,margin:0,lineHeight:1.6}}>AI-estimated fares for {form.from || "your origin"} → {form.destination}. Always confirm live prices on booking sites above.</p>
       </div>
+
+      {loading && (
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          {[1,2,3,4].map(i => <Skeleton key={i} h="200px" r="18px"/>)}
+        </div>
+      )}
+
+      {flights?._error && (
+        <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:20,padding:"40px 24px",textAlign:"center"}}>
+          <div style={{fontSize:48,marginBottom:14}}>✈️</div>
+          <div style={{color:c.text,fontWeight:700,fontSize:18,marginBottom:8}}>Flight suggestions temporarily unavailable</div>
+          <p style={{color:c.textMuted,fontSize:14,lineHeight:1.6,maxWidth:380,margin:"0 auto 20px"}}>Search live fares on Skyscanner, Google Flights, or Expedia using the links above.</p>
+          <Btn onClick={fetchFlights} variant="ghost" style={{fontSize:13}}>Try again</Btn>
+        </div>
+      )}
+
+      {!loading && Array.isArray(flights) && filtered.length === 0 && flights.length > 0 && (
+        <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:14,padding:"20px 24px",textAlign:"center"}}>
+          <p style={{color:c.textMuted,fontSize:14,margin:0}}>No flights match your current filters. Try adjusting refundable or direct-only settings.</p>
+        </div>
+      )}
+
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
-        {flights.map((f,i)=>(
-          <div key={i} style={{background:c.surface,border:`1.5px solid ${i===2?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden",position:"relative"}}>
-            {i===2&&<div style={{position:"absolute",top:14,right:14,zIndex:3,background:c.accent,color:"#fff",fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:20,letterSpacing:"0.08em"}}>BEST VALUE</div>}
-            {/* Real aircraft photo with gradient overlay */}
+        {filtered.map((f, i) => (
+          <div key={i} style={{background:c.surface,border:`1.5px solid ${i===0?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden",position:"relative"}}>
+            {i===0 && <div style={{position:"absolute",top:14,right:14,zIndex:3,background:c.accent,color:"#fff",fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:20,letterSpacing:"0.08em"}}>TOP PICK</div>}
             <div style={{position:"relative",height:168,overflow:"hidden"}}>
-              <Img src={AIRLINE_PHOTOS[f.airline]} fallbackSrc={AIRLINE_PHOTOS["_fallback"]} alt={`${f.airline} aircraft`} iconName="plane"/>
+              <Img src={AIRLINE_PHOTOS[f.airline] || AIRLINE_PHOTOS["_fallback"]} fallbackSrc={AIRLINE_PHOTOS["_fallback"]} alt={`${f.airline} aircraft`} iconName="plane"/>
               <div style={{position:"absolute",inset:0,background:"linear-gradient(to right,rgba(0,0,0,0.75) 0%,rgba(0,0,0,0.15) 65%,transparent 100%)"}}/>
               <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"14px 20px"}}>
                 <div style={{color:"#fff",fontWeight:800,fontSize:20,letterSpacing:"-0.02em",textShadow:"0 1px 4px rgba(0,0,0,0.4)"}}>{f.airline}</div>
-                <div style={{color:"rgba(255,255,255,0.78)",fontSize:13,marginTop:2}}>{f.stops===0?"Nonstop":"1 stop"} · {f.duration}</div>
+                <div style={{color:"rgba(255,255,255,0.78)",fontSize:13,marginTop:2}}>{f.stops===0?"Nonstop":f.stops===1?"1 stop":`${f.stops} stops`} · {f.duration}</div>
               </div>
             </div>
-            {/* Flight details */}
             <div style={{padding:"16px 20px",display:"flex",flexWrap:"wrap",alignItems:"center",justifyContent:"space-between",gap:14}}>
               <div style={{display:"flex",gap:20,alignItems:"center"}}>
                 <div style={{textAlign:"center"}}>
@@ -761,11 +848,12 @@ function FlightsTab({ form, settings }) {
                 </div>
               </div>
               <div style={{textAlign:"right"}}>
-                <div style={{color:c.accent,fontWeight:900,fontSize:26,letterSpacing:"-0.03em"}}>${f.price}</div>
-                <div style={{color:f.refundable?c.success:c.danger,fontSize:12,fontWeight:700,margin:"4px 0 10px"}}>{f.refundable?"✓ Refundable":"Non-refundable"}</div>
+                <div style={{color:c.accent,fontWeight:900,fontSize:26,letterSpacing:"-0.03em"}}>~${f.estimatedPrice}</div>
+                <div style={{color:c.textMuted,fontSize:11,margin:"2px 0 4px",fontStyle:"italic"}}>est. per person</div>
+                <div style={{color:f.refundable?c.success:c.danger,fontSize:12,fontWeight:700,margin:"2px 0 10px"}}>{f.refundable?"✓ Refundable":"Non-refundable"}</div>
                 <a href={skUrl} target="_blank" rel="noopener noreferrer"
                   style={{display:"inline-block",padding:"10px 22px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800,boxShadow:`0 6px 20px ${c.accentBorder}`}}>
-                  Book →
+                  Search →
                 </a>
               </div>
             </div>
@@ -776,55 +864,118 @@ function FlightsTab({ form, settings }) {
   );
 }
 
-// ─── Hotels Tab — real hotel exterior photos ──────────────────────────────────
-function HotelsTab({ form, settings }) {
+// ─── Hotels Tab — AI-powered hotel recommendations ────────────────────────────
+function HotelsTab({ form, settings, apiKey }) {
   const { c, fontBody } = useTokens();
-  const hotels = [
-    { name:"Le Grand Palace",    stars:5, rating:9.4, reviews:2341, price:289, refundable:true,  amenities:["wifi","pool","gym","coffee"], img:HOTEL_PHOTOS[0] },
-    { name:"Boutique Central",   stars:4, rating:9.1, reviews:876,  price:145, refundable:true,  amenities:["wifi","coffee"],              img:HOTEL_PHOTOS[1] },
-    { name:"Urban Loft Hotel",   stars:4, rating:8.8, reviews:1203, price:118, refundable:false, amenities:["wifi","gym"],                 img:HOTEL_PHOTOS[2] },
-    { name:"The Traveler's Inn", stars:3, rating:8.5, reviews:4520, price:74,  refundable:true,  amenities:["wifi","coffee"],              img:HOTEL_PHOTOS[3] },
-  ].filter(h=>!settings.refundableOnly||h.refundable);
+  const [hotels, setHotels] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  async function fetchHotels() {
+    if (!form.destination || !apiKey) return;
+    const ck = sCacheKey("hotels", form.destination, form.style);
+    const hit = sGet(ck);
+    if (hit) { setHotels(hit); return; }
+    setLoading(true); setHotels(null);
+    try {
+      const raw = await askClaude(
+        `Hotel expert. Return ONLY a JSON array of 4 hotels. Each: {"name":"string (real hotel name)","stars":4,"neighborhood":"string","description":"string max 15 words","pricePerNight":number,"amenities":["wifi","pool","gym","coffee"] (only include what the hotel realistically has, from this list: wifi pool gym coffee),"refundable":boolean,"rating":8.5}. Use real hotels at this destination. Vary star level and price. No markdown.`,
+        `Best hotels in ${form.destination} for ${form.travelers || 2} traveler(s) with a $${form.budget || 3000} total budget. Travel style: ${form.style || "general"}${form.dateFrom ? `. Dates: ${form.dateFrom} to ${form.dateTo}` : ""}.`,
+        apiKey, 1000
+      );
+      const parsed = parseJSON(raw);
+      const data = Array.isArray(parsed) ? parsed : parsed.hotels || [];
+      sSet(ck, data);
+      setHotels(data);
+    } catch(e) { setHotels({ _error: true }); }
+    setLoading(false);
+  }
+
+  useEffect(() => { if (form.destination && apiKey) fetchHotels(); }, [form.destination]);
+
+  const filtered = Array.isArray(hotels) ? hotels.filter(h => !settings.refundableOnly || h.refundable) : [];
+
+  if (!form.destination) return (
+    <div style={{textAlign:"center",padding:"72px 20px"}}>
+      <div style={{fontSize:64,marginBottom:16}}>🏨</div>
+      <p style={{color:c.textMuted,fontSize:15}}>Plan a trip first to see hotel recommendations</p>
+    </div>
+  );
 
   return (
     <div>
       <AdSlot/>
-      <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
-        {[{name:"Booking.com",url:AFF.bookingHotels(form.destination)},{name:"Expedia",url:AFF.expediaHotels(form.destination)},{name:"Hotels.com",url:`https://www.hotels.com/search.do?q-destination=${encodeURIComponent(form.destination||"")}`},{name:"TripAdvisor",url:`https://www.tripadvisor.com/Search?q=${encodeURIComponent((form.destination||"")+" hotels")}`},{name:"Priceline",url:`https://www.priceline.com/relax/in/${encodeURIComponent(form.destination||"")}`}].map(s=>(
+      <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
+        {[
+          {name:"Booking.com", url:AFF.bookingHotels(form.destination, form.dateFrom, form.dateTo, form.travelers)},
+          {name:"Expedia", url:AFF.expediaHotels(form.destination, form.dateFrom, form.dateTo, form.travelers)},
+          {name:"Hotels.com", url:`https://www.hotels.com/search.do?q-destination=${encodeURIComponent(form.destination||"")}&q-check-in=${form.dateFrom||""}&q-check-out=${form.dateTo||""}&q-rooms=1&q-room-0-adults=${form.travelers||2}`},
+          {name:"TripAdvisor", url:`https://www.tripadvisor.com/Search?q=${encodeURIComponent((form.destination||"")+" hotels")}`},
+          {name:"Priceline", url:`https://www.priceline.com/relax/in/${encodeURIComponent(form.destination||"")}`},
+        ].map(s => (
           <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
             style={{padding:"10px 16px",background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:10,color:c.textMuted,textDecoration:"none",fontSize:13,fontWeight:600,fontFamily:fontBody}}>
             {s.name}
           </a>
         ))}
+        <Btn onClick={fetchHotels} disabled={loading} variant="ghost" style={{fontSize:13,padding:"9px 16px"}}>
+          <Icon name="sparkle" size={14} color={c.accentHi}/>{loading ? "Searching…" : "Refresh"}
+        </Btn>
       </div>
+
+      {loading && (
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:16}}>
+          {[1,2,3,4].map(i => <Skeleton key={i} h="340px" r="18px"/>)}
+        </div>
+      )}
+
+      {hotels?._error && (
+        <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:20,padding:"40px 24px",textAlign:"center"}}>
+          <div style={{fontSize:48,marginBottom:14}}>🏨</div>
+          <div style={{color:c.text,fontWeight:700,fontSize:18,marginBottom:8}}>Hotel suggestions temporarily unavailable</div>
+          <p style={{color:c.textMuted,fontSize:14,lineHeight:1.6,maxWidth:380,margin:"0 auto 20px"}}>Browse hotels on Booking.com or Expedia using the links above.</p>
+          <Btn onClick={fetchHotels} variant="ghost" style={{fontSize:13}}>Try again</Btn>
+        </div>
+      )}
+
+      {!loading && Array.isArray(hotels) && filtered.length === 0 && hotels.length > 0 && (
+        <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:14,padding:"20px 24px",textAlign:"center"}}>
+          <p style={{color:c.textMuted,fontSize:14,margin:0}}>No hotels match your current filters. Try adjusting the refundable setting.</p>
+        </div>
+      )}
+
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:16}}>
-        {hotels.map((h,i)=>(
-          <div key={i} style={{background:c.surface,border:`1.5px solid ${i===1?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden"}}>
-            {i===1&&<div style={{background:c.accent,padding:"7px 18px",fontSize:10,fontWeight:800,color:"#fff",letterSpacing:"0.1em",textAlign:"center"}}>★ BEST VALUE</div>}
+        {filtered.map((h, i) => (
+          <div key={i} style={{background:c.surface,border:`1.5px solid ${i===0?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden"}}>
+            {i===0 && <div style={{background:c.accent,padding:"7px 18px",fontSize:10,fontWeight:800,color:"#fff",letterSpacing:"0.1em",textAlign:"center"}}>★ TOP PICK</div>}
             <div style={{height:168,position:"relative",overflow:"hidden"}}>
-              <Img src={h.img} fallbackSrc={HOTEL_PHOTOS[3]} alt={h.name} iconName="hotel"/>
+              <Img src={HOTEL_PHOTOS[i % HOTEL_PHOTOS.length]} fallbackSrc={HOTEL_PHOTOS[0]} alt={h.name} iconName="hotel"/>
               <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(0,0,0,0.72) 0%,transparent 55%)",pointerEvents:"none"}}/>
               <div style={{position:"absolute",bottom:14,left:16,right:16}}>
                 <div style={{color:"#fff",fontWeight:800,fontSize:17,textShadow:"0 1px 4px rgba(0,0,0,0.5)"}}>{h.name}</div>
-                <div style={{color:"rgba(255,255,255,0.8)",fontSize:12}}>{"★".repeat(h.stars)} {h.stars}-star</div>
+                <div style={{color:"rgba(255,255,255,0.8)",fontSize:12}}>{"★".repeat(Math.min(5,Math.max(1,h.stars||4)))} {h.stars||4}-star · {h.neighborhood}</div>
               </div>
             </div>
             <div style={{padding:18}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
                 <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{background:"rgba(34,211,160,0.15)",color:c.success,padding:"4px 10px",borderRadius:8,fontSize:13,fontWeight:800}}>{h.rating}</span>
-                  <span style={{color:c.textMuted,fontSize:12}}>{h.reviews.toLocaleString()} reviews</span>
+                  <span style={{background:"rgba(34,211,160,0.15)",color:c.success,padding:"4px 10px",borderRadius:8,fontSize:13,fontWeight:800}}>{h.rating||"—"}</span>
+                  <span style={{color:c.textMuted,fontSize:12}}>AI-estimated</span>
                 </div>
-                <div><span style={{color:c.accent,fontWeight:900,fontSize:22}}>${h.price}</span><span style={{color:c.textMuted,fontSize:11}}>/night</span></div>
+                <div><span style={{color:c.accent,fontWeight:900,fontSize:22}}>~${h.pricePerNight}</span><span style={{color:c.textMuted,fontSize:11}}>/night</span></div>
               </div>
+              {h.description && <p style={{color:c.textMuted,fontSize:13,margin:"0 0 10px",lineHeight:1.55}}>{h.description}</p>}
               <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
-                {h.amenities.map(a=><span key={a} style={{background:c.bg2,border:`1px solid ${c.border}`,borderRadius:999,padding:"4px 10px",fontSize:11,color:c.textMuted,display:"inline-flex",alignItems:"center",gap:5}}><Icon name={a} size={12} color={c.textMuted}/>{a}</span>)}
+                {h.amenities?.map(a => (
+                  <span key={a} style={{background:c.bg2,border:`1px solid ${c.border}`,borderRadius:999,padding:"4px 10px",fontSize:11,color:c.textMuted,display:"inline-flex",alignItems:"center",gap:5}}>
+                    <Icon name={["wifi","pool","gym","coffee"].includes(a) ? a : "info"} size={12} color={c.textMuted}/>{a}
+                  </span>
+                ))}
               </div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontSize:12,fontWeight:700,color:h.refundable?c.success:c.danger}}>{h.refundable?"Free cancellation":"Non-refundable"}</span>
-                <a href={AFF.bookingHotels(form.destination)} target="_blank" rel="noopener noreferrer"
+                <a href={AFF.bookingHotels(form.destination, form.dateFrom, form.dateTo, form.travelers)} target="_blank" rel="noopener noreferrer"
                   style={{padding:"9px 18px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:13,fontWeight:800}}>
-                  View →
+                  Search →
                 </a>
               </div>
             </div>
@@ -835,41 +986,106 @@ function HotelsTab({ form, settings }) {
   );
 }
 
-// ─── Cars Tab — real specific car photos ─────────────────────────────────────
-function CarsTab({ form }) {
+// ─── Cars Tab — AI-powered car rental suggestions ─────────────────────────────
+function CarsTab({ form, apiKey }) {
   const { c, fontBody } = useTokens();
-  const cars = [
-    { type:"Economy",     ex:"Toyota Yaris", price:28,  img:CAR_PHOTOS["Toyota Yaris"], fb:CAR_PHOTOS["_fallback"] },
-    { type:"Compact SUV", ex:"Nissan Rogue", price:52,  img:CAR_PHOTOS["Nissan Rogue"], fb:CAR_PHOTOS["_fallback"] },
-    { type:"Midsize",     ex:"Toyota Camry", price:41,  img:CAR_PHOTOS["Toyota Camry"], fb:CAR_PHOTOS["_fallback"] },
-    { type:"Luxury",      ex:"BMW 5 Series", price:115, img:CAR_PHOTOS["BMW 5 Series"], fb:CAR_PHOTOS["_fallback"] },
-  ];
+  const [cars, setCars] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  async function fetchCars() {
+    if (!form.destination || !apiKey) return;
+    const ck = sCacheKey("cars", form.destination);
+    const hit = sGet(ck);
+    if (hit) { setCars(hit); return; }
+    setLoading(true); setCars(null);
+    try {
+      const nights = form.dateFrom && form.dateTo
+        ? Math.max(1, Math.round((new Date(form.dateTo) - new Date(form.dateFrom)) / 864e5))
+        : 5;
+      const raw = await askClaude(
+        `Car rental expert. Return ONLY a JSON array of 4 car rental options. Each: {"category":"Economy"|"Compact SUV"|"Midsize"|"Luxury","example":"string (specific popular model)","estimatedDailyRate":number,"features":["string","string"],"recommended":boolean}. Use realistic local pricing for the destination. Mark exactly one as recommended. No markdown.`,
+        `Car rentals in ${form.destination} for ${nights} days. Budget: $${form.budget || 3000} total for ${form.travelers || 2} traveler(s). Style: ${form.style || "general"}.`,
+        apiKey, 700
+      );
+      const parsed = parseJSON(raw);
+      const data = Array.isArray(parsed) ? parsed : parsed.cars || [];
+      sSet(ck, data);
+      setCars(data);
+    } catch(e) { setCars({ _error: true }); }
+    setLoading(false);
+  }
+
+  useEffect(() => { if (form.destination && apiKey) fetchCars(); }, [form.destination]);
+
+  function categoryPhoto(cat) {
+    if (!cat) return CAR_PHOTOS._fallback;
+    const key = Object.keys(CAR_PHOTOS).find(k => k !== "_fallback" && cat.toLowerCase().includes(k.toLowerCase()));
+    return key ? CAR_PHOTOS[key] : CAR_PHOTOS._fallback;
+  }
+
+  if (!form.destination) return (
+    <div style={{textAlign:"center",padding:"72px 20px"}}>
+      <div style={{fontSize:64,marginBottom:16}}>🚗</div>
+      <p style={{color:c.textMuted,fontSize:15}}>Plan a trip first to see car rental options</p>
+    </div>
+  );
+
   return (
     <div>
-      <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap"}}>
-        {[{name:"Costco Travel",url:"https://www.costcotravel.com/Rental-Cars",badge:"Save up to 25%"},{name:"Kayak",url:AFF.kayakCars(form.destination)},{name:"RentalCars",url:"https://www.rentalcars.com"},{name:"Expedia Cars",url:"https://www.expedia.com/Cars"}].map(s=>(
+      <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
+        {[
+          {name:"Costco Travel", url:"https://www.costcotravel.com/Rental-Cars", badge:"Save up to 25%"},
+          {name:"Kayak", url:AFF.kayakCars(form.destination, form.dateFrom, form.dateTo)},
+          {name:"RentalCars", url:"https://www.rentalcars.com"},
+          {name:"Expedia Cars", url:"https://www.expedia.com/Cars"},
+        ].map(s => (
           <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
             style={{padding:"10px 16px",background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:10,color:c.text,textDecoration:"none",fontSize:13,display:"flex",flexDirection:"column",gap:3,fontFamily:fontBody}}>
             <span style={{fontWeight:700}}>{s.name}</span>
-            {s.badge&&<span style={{color:c.success,fontSize:11,fontWeight:600}}>{s.badge}</span>}
+            {s.badge && <span style={{color:c.success,fontSize:11,fontWeight:600}}>{s.badge}</span>}
           </a>
         ))}
+        <Btn onClick={fetchCars} disabled={loading} variant="ghost" style={{fontSize:13,padding:"9px 16px"}}>
+          <Icon name="sparkle" size={14} color={c.accentHi}/>{loading ? "Searching…" : "Refresh"}
+        </Btn>
       </div>
+
+      {loading && (
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:16}}>
+          {[1,2,3,4].map(i => <Skeleton key={i} h="300px" r="18px"/>)}
+        </div>
+      )}
+
+      {cars?._error && (
+        <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:20,padding:"40px 24px",textAlign:"center"}}>
+          <div style={{fontSize:48,marginBottom:14}}>🚗</div>
+          <div style={{color:c.text,fontWeight:700,fontSize:18,marginBottom:8}}>Car rental suggestions temporarily unavailable</div>
+          <p style={{color:c.textMuted,fontSize:14,lineHeight:1.6,maxWidth:380,margin:"0 auto 20px"}}>Compare cars on Kayak or Costco Travel using the links above.</p>
+          <Btn onClick={fetchCars} variant="ghost" style={{fontSize:13}}>Try again</Btn>
+        </div>
+      )}
+
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:16}}>
-        {cars.map((car,i)=>(
-          <div key={i} style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:18,overflow:"hidden"}}>
+        {Array.isArray(cars) && cars.map((car, i) => (
+          <div key={i} style={{background:c.surface,border:`1.5px solid ${car.recommended?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden"}}>
+            {car.recommended && <div style={{background:c.accent,padding:"5px 12px",fontSize:10,fontWeight:800,color:"#fff",letterSpacing:"0.08em",textAlign:"center"}}>★ RECOMMENDED</div>}
             <div style={{height:168,position:"relative",overflow:"hidden"}}>
-              <Img src={car.img} fallbackSrc={car.fb} alt={car.ex} iconName="car"/>
+              <Img src={categoryPhoto(car.category)} fallbackSrc={CAR_PHOTOS._fallback} alt={car.example||car.category} iconName="car"/>
               <div style={{position:"absolute",inset:0,background:"linear-gradient(to bottom,rgba(0,0,0,0.55) 0%,transparent 50%)"}}/>
               <div style={{position:"absolute",top:14,left:14}}>
-                <span style={{background:"rgba(0,0,0,0.65)",color:"#fff",fontSize:11,fontWeight:800,padding:"5px 12px",borderRadius:20,backdropFilter:"blur(6px)",letterSpacing:"0.05em"}}>{car.type.toUpperCase()}</span>
+                <span style={{background:"rgba(0,0,0,0.65)",color:"#fff",fontSize:11,fontWeight:800,padding:"5px 12px",borderRadius:20,backdropFilter:"blur(6px)",letterSpacing:"0.05em"}}>{(car.category||"Car").toUpperCase()}</span>
               </div>
             </div>
             <div style={{padding:18}}>
-              <div style={{color:c.text,fontWeight:700,fontSize:16}}>{car.ex}</div>
-              <div style={{color:c.textMuted,fontSize:13,margin:"4px 0 14px"}}>or similar</div>
-              <div style={{color:c.accent,fontWeight:900,fontSize:22,marginBottom:14}}>from ${car.price}<span style={{color:c.textMuted,fontSize:12,fontWeight:500}}>/day</span></div>
-              <a href={AFF.kayakCars(form.destination)} target="_blank" rel="noopener noreferrer"
+              <div style={{color:c.text,fontWeight:700,fontSize:16}}>{car.example}</div>
+              <div style={{color:c.textMuted,fontSize:13,margin:"4px 0 10px"}}>or similar</div>
+              {car.features?.length > 0 && (
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+                  {car.features.map(f => <span key={f} style={{background:c.bg2,border:`1px solid ${c.border}`,borderRadius:999,padding:"3px 9px",fontSize:11,color:c.textMuted}}>{f}</span>)}
+                </div>
+              )}
+              <div style={{color:c.accent,fontWeight:900,fontSize:22,marginBottom:14}}>~${car.estimatedDailyRate}<span style={{color:c.textMuted,fontSize:12,fontWeight:500}}>/day</span></div>
+              <a href={AFF.kayakCars(form.destination, form.dateFrom, form.dateTo)} target="_blank" rel="noopener noreferrer"
                 style={{display:"block",textAlign:"center",padding:"11px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800}}>
                 Compare rates →
               </a>
@@ -961,50 +1177,6 @@ function LandingSections({ onSearch, loading }) {
     { emoji:"🖨️", title:"Printable and shareable", desc:"One tap to get a clean print-ready itinerary to share with your travel companions." },
   ];
 
-  const tokyoTrip = {
-    destination: "Tokyo, Japan",
-    budget: "$2,200 for 2 people · 3 days",
-    days: [
-      {
-        title: "Day 1 — Arrival + Old Tokyo",
-        activities: [
-          { time:"2:00 PM", name:"Check in — Dormy Inn Asakusa", cost:"$95/night · Free cancellation" },
-          { time:"4:00 PM", name:"Senso-ji Temple + Nakamise Shopping Street", cost:"Free · ~90 min" },
-          { time:"6:30 PM", name:"Dinner at Daikokuya Tempura, Asakusa", cost:"~$18/person · Order the tempura donburi" },
-          { time:"8:30 PM", name:"Sumida River evening walk · Tokyo Skytree views", cost:"Free" },
-        ]
-      },
-      {
-        title: "Day 2 — Shibuya + Harajuku + Shinjuku",
-        activities: [
-          { time:"9:00 AM", name:"Breakfast at 7-Eleven konbini", cost:"~$4/person · Full Japanese breakfast experience" },
-          { time:"10:30 AM", name:"Meiji Shrine + Yoyogi Park", cost:"Free · 75 min" },
-          { time:"12:30 PM", name:"Lunch — Maisen Tonkatsu on Omotesando", cost:"~$15/person" },
-          { time:"2:30 PM", name:"Shibuya Crossing + Scramble Square observation deck", cost:"$18/person" },
-          { time:"8:00 PM", name:"Shinjuku Golden Gai — micro-bar alley", cost:"~$8/drink" },
-        ]
-      },
-      {
-        title: "Day 3 — Tsukiji + Akihabara + Departure",
-        activities: [
-          { time:"7:30 AM", name:"Tsukiji Outer Market breakfast — fresh sushi + tamagoyaki", cost:"~$12/person" },
-          { time:"10:00 AM", name:"Akihabara electronics + anime district", cost:"Free to browse" },
-          { time:"12:30 PM", name:"Lunch — Kanda Yabu Soba (oldest soba in Tokyo)", cost:"~$14/person" },
-          { time:"3:00 PM", name:"Head to Narita/Haneda for evening flight", cost:"" },
-        ]
-      }
-    ],
-    budget_items: [
-      { label:"Flights", val:"~$820" },
-      { label:"Hotels", val:"~$570" },
-      { label:"Food", val:"~$210" },
-      { label:"Activities", val:"~$90" },
-      { label:"Total", val:"~$1,690 ✅", highlight:true },
-    ]
-  };
-
-  const [exampleOpenDay, setExampleOpenDay] = useState(0);
-
   const metrics = [
     { val:"~30 sec", label:"To build a full itinerary" },
     { val:"190+", label:"Countries supported" },
@@ -1046,69 +1218,6 @@ function LandingSections({ onSearch, loading }) {
             Plan My Trip Free →
           </button>
           <div style={{color:c.textSubtle,fontSize:12,marginTop:10,fontWeight:500}}>No account required · No credit card · 100% free to plan</div>
-        </div>
-      </div>
-
-      {/* ── EXAMPLE ITINERARY ────────────────────────────────────────────── */}
-      <div style={sectionStyle}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end",flexWrap:"wrap",gap:16,marginBottom:32}}>
-          <div>
-            <div style={{color:c.accent,fontSize:12,fontWeight:800,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:12}}>Sample output</div>
-            <h2 style={h2Style}>Your trip will look exactly like this</h2>
-            <p style={{color:c.textMuted,fontSize:15,margin:0,lineHeight:1.6}}>A real 3-day Tokyo itinerary generated by TripForge</p>
-          </div>
-          <div style={{background:c.accentLow,border:`1.5px solid ${c.accentBorder}`,borderRadius:12,padding:"10px 18px",flexShrink:0}}>
-            <span style={{color:c.accentHi,fontSize:13,fontWeight:700}}>{tokyoTrip.destination}</span>
-            <span style={{color:c.textMuted,fontSize:12,marginLeft:10}}>{tokyoTrip.budget}</span>
-          </div>
-        </div>
-
-        {/* Budget bar */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))",gap:10,marginBottom:24}}>
-          {tokyoTrip.budget_items.map((b,i)=>(
-            <div key={i} style={{background:b.highlight?c.accentLow:c.surface,border:`1.5px solid ${b.highlight?c.accentBorder:c.border}`,borderRadius:12,padding:"14px 12px",textAlign:"center"}}>
-              <div style={{color:b.highlight?c.accentHi:c.accent,fontSize:16,fontWeight:800}}>{b.val}</div>
-              <div style={{color:c.textMuted,fontSize:11,fontWeight:600,marginTop:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>{b.label}</div>
-            </div>
-          ))}
-        </div>
-
-        {/* Day cards */}
-        <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:28}}>
-          {tokyoTrip.days.map((day,i)=>(
-            <div key={i} style={{background:c.surface,border:`1.5px solid ${i===exampleOpenDay?c.accentBorder:c.border}`,borderRadius:16,overflow:"hidden",transition:"border-color 0.15s"}}>
-              <button onClick={()=>setExampleOpenDay(exampleOpenDay===i?-1:i)}
-                style={{width:"100%",padding:"16px 20px",background:"transparent",border:"none",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",textAlign:"left",fontFamily:fontBody}}>
-                <div style={{display:"flex",alignItems:"center",gap:12}}>
-                  <span style={{background:i===exampleOpenDay?c.accent:c.bg2,color:i===exampleOpenDay?"#fff":c.textMuted,fontSize:11,fontWeight:800,padding:"4px 10px",borderRadius:999,transition:"all 0.15s"}}>DAY {i+1}</span>
-                  <span style={{color:c.text,fontWeight:700,fontSize:15}}>{day.title.replace(`Day ${i+1} — `,"")}</span>
-                </div>
-                <span style={{transform:exampleOpenDay===i?"rotate(90deg)":"none",transition:"transform 0.2s",display:"inline-flex",flexShrink:0}}>
-                  <Icon name="chevron" size={18} color={c.textMuted}/>
-                </span>
-              </button>
-              {exampleOpenDay===i && (
-                <div style={{padding:"0 20px 20px"}}>
-                  {day.activities.map((act,j)=>(
-                    <div key={j} style={{display:"flex",gap:16,padding:"11px 0",borderTop:`1px solid ${c.border}`}}>
-                      <div style={{color:c.accent,fontSize:12,fontWeight:800,minWidth:62,paddingTop:1,flexShrink:0}}>{act.time}</div>
-                      <div>
-                        <div style={{color:c.text,fontWeight:600,fontSize:14}}>{act.name}</div>
-                        {act.cost&&<div style={{color:c.textMuted,fontSize:12,marginTop:3}}>{act.cost}</div>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-
-        <div style={{textAlign:"center"}}>
-          <button onClick={scrollToForm}
-            style={{display:"inline-flex",alignItems:"center",gap:8,padding:"13px 28px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,color:"#fff",border:"none",borderRadius:12,fontSize:15,fontWeight:700,cursor:"pointer",fontFamily:fontBody,boxShadow:`0 6px 20px ${c.accentBorder}`}}>
-            Get my itinerary →
-          </button>
         </div>
       </div>
 
@@ -1198,9 +1307,39 @@ export default function TripForge() {
   const [loading, setLoading]   = useState(false);
   const [form, setForm]         = useState({});
   const [settings, setSettings] = useState(()=>{try{return JSON.parse(localStorage.getItem("tf_settings")||"{}");}catch{return {};}});
+  const [copied, setCopied] = useState(false);
   const ds = {currency:"USD",units:"Fahrenheit",refundableOnly:false,directOnly:false,...settings};
 
   function saveSettings(s){localStorage.setItem("tf_settings",JSON.stringify(s));setSettings(s);}
+
+  function shareTrip() {
+    const url = window.location.href;
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(url).then(()=>{ setCopied(true); setTimeout(()=>setCopied(false),2200); });
+    } else {
+      const el = Object.assign(document.createElement("input"),{value:url,style:"position:fixed;opacity:0"});
+      document.body.appendChild(el); el.select(); document.execCommand("copy"); document.body.removeChild(el);
+      setCopied(true); setTimeout(()=>setCopied(false),2200);
+    }
+  }
+
+  // Auto-search when page is loaded via a shared link
+  useEffect(()=>{
+    try {
+      const p = new URLSearchParams(window.location.search);
+      const dest = p.get("dest");
+      if (!dest) return;
+      handleSearch({
+        destination: dest, from: p.get("from")||"",
+        dateFrom: p.get("df")||"", dateTo: p.get("dt")||"",
+        travelers: p.get("t")||"2", budget: p.get("b")||"3000",
+        style: p.get("s")||"relaxation",
+        multiCity: false, surpriseMode: false,
+        destinations: [{ city: dest, dateFrom: p.get("df")||"", dateTo: p.get("dt")||"" }],
+      });
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[]);
 
   async function handleSearch(formData) {
     setForm(formData); setLoading(true); setTab("itinerary"); setTripData(null);
@@ -1218,6 +1357,10 @@ export default function TripForge() {
           ? `multi-city: ${formData.destinations?.map(d=>d.city).filter(Boolean).join(" → ")}`
           : formData.destination;
 
+      const ck = sCacheKey("itin", dest, formData.style, formData.travelers, formData.budget, nights);
+      const hit = sGet(ck);
+      if (hit) { setTripData(hit); setLoading(false); return; }
+
       const system = `You are an expert travel planner. RULES:
 1. All activities, restaurants, and attractions MUST be real places in ${dest} accessible during the given dates.
 2. Use real names — no generic placeholders.
@@ -1228,9 +1371,23 @@ export default function TripForge() {
 
       const raw = await askClaude(system,
         `Plan ${nights}-night ${formData.style} trip to ${dest}. ${formData.travelers} traveler(s). $${formData.budget} total budget. ${dateContext} Origin: ${formData.from||"unspecified"}.`,
-        apiKey
+        apiKey, 3000
       );
-      setTripData(parseJSON(raw));
+      const parsed = parseJSON(raw);
+      sSet(ck, parsed);
+      setTripData(parsed);
+      // Encode trip in URL so it can be shared
+      if (!formData.multiCity && !formData.surpriseMode && formData.destination) {
+        try {
+          const p = new URLSearchParams({
+            dest: formData.destination, from: formData.from||"",
+            df: formData.dateFrom||"", dt: formData.dateTo||"",
+            t: formData.travelers||"2", b: formData.budget||"3000",
+            s: formData.style||"relaxation",
+          });
+          history.replaceState(null, "", `?${p}`);
+        } catch {}
+      }
     } catch(e) {
       setTripData({destination:formData.destination||"Your Trip",_error:true,days:[],tips:[]});
     }
@@ -1297,12 +1454,16 @@ export default function TripForge() {
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             <button onClick={()=>window.scrollTo({top:0,behavior:"smooth"})}
-              style={{display:"none",padding:"8px 18px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,color:"#fff",border:"none",borderRadius:9,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:fontBody,
-              // show on md+ screens via inline check — CSS media handled in style tag
-              }}
+              style={{display:"none",padding:"8px 18px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,color:"#fff",border:"none",borderRadius:9,fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:fontBody}}
               className="header-cta">
               Plan a Trip
             </button>
+            {tripData && !tripData._error && (
+              <button onClick={shareTrip} style={{background:"none",border:`1.5px solid ${copied?c.success:c.border}`,borderRadius:10,padding:"7px 12px",color:copied?c.success:c.textMuted,cursor:"pointer",display:"flex",alignItems:"center",gap:7,fontSize:13,fontWeight:600,fontFamily:fontBody,transition:"all 0.2s"}}>
+                <Icon name={copied?"check":"share"} size={15} color={copied?c.success:c.textMuted}/>
+                <span style={{display:"none"}} className="header-cta">{copied?"Copied!":"Share"}</span>
+              </button>
+            )}
             <button onClick={toggleTheme} style={{background:"none",border:`1.5px solid ${c.border}`,borderRadius:10,padding:"7px 12px",color:c.textMuted,cursor:"pointer",display:"flex",alignItems:"center",gap:7,fontSize:13,fontWeight:600,fontFamily:fontBody}}>
               <Icon name={dark?"sun":"moon"} size={15} color={c.textMuted}/>
             </button>
@@ -1341,9 +1502,9 @@ export default function TripForge() {
           {tab==="itinerary"   && <ItineraryTab   tripData={tripData} loading={loading} form={form} apiKey={apiKey}/>}
           {tab==="map"         && <MapTab         tripData={tripData} form={form}/>}
           {tab==="restaurants" && <RestaurantsTab form={form} apiKey={apiKey}/>}
-          {tab==="flights"     && <FlightsTab     form={form} settings={ds}/>}
-          {tab==="hotels"      && <HotelsTab      form={form} settings={ds}/>}
-          {tab==="cars"        && <CarsTab        form={form}/>}
+          {tab==="flights"     && <FlightsTab     form={form} settings={ds} apiKey={apiKey}/>}
+          {tab==="hotels"      && <HotelsTab      form={form} settings={ds} apiKey={apiKey}/>}
+          {tab==="cars"        && <CarsTab        form={form} apiKey={apiKey}/>}
           {tab==="weather"     && <WeatherTab     form={form}/>}
         </main>
 
@@ -1377,7 +1538,7 @@ export default function TripForge() {
           </div>
           <div style={{borderTop:`1px solid ${c.border}`,paddingTop:16,display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
             <span style={{color:c.textSubtle,fontSize:12}}>© 2026 TripForge. All rights reserved.</span>
-            <span style={{color:c.textSubtle,fontSize:11}}>Sample prices shown for reference. Confirm on provider sites. Some links are affiliate links — this helps keep TripForge free.</span>
+            <span style={{color:c.textSubtle,fontSize:11}}>AI-estimated prices for reference only — always confirm live pricing on provider sites. Some links are affiliate links that help keep TripForge free.</span>
           </div>
         </footer>
 
