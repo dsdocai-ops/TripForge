@@ -18,7 +18,6 @@ const AFF = {
     `https://www.expedia.com/Flights-Search?flight-type=on&mode=search&trip=oneway&leg1=from:${encodeURIComponent(from||"")},to:${encodeURIComponent(to||"")}&affcid=YOURAFFID`,
   kayakCars: (dest) =>
     `https://www.kayak.com/cars/${encodeURIComponent(dest||"")}?affiliate=YOURAFFID`,
-  viator: (dest) =>
     `https://www.viator.com/searchResults/all?text=${encodeURIComponent(dest||"")}&pid=YOURAFFID`,
   googleFlights: (from, to) =>
     `https://www.google.com/travel/flights?q=flights+from+${encodeURIComponent(from||"")}+to+${encodeURIComponent(to||"")}`,
