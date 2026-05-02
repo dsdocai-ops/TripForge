@@ -1453,10 +1453,12 @@ export default function TripForge() {
     try {
       const nights = formData.dateFrom&&formData.dateTo
         ? Math.max(1,Math.round((new Date(formData.dateTo)-new Date(formData.dateFrom))/864e5)) : 5;
+      // Activity days = nights (arrival day counts, departure day does NOT get its own day)
+      const activityDays = nights;
 
       const dateContext = formData.dateFrom
-        ? `Travel dates: ${formData.dateFrom} to ${formData.dateTo||"open-ended"}. CRITICAL: only suggest attractions, restaurants, and activities that are confirmed open/operating during these specific dates. Mention any seasonal events or weather considerations for that period.`
-        : "Dates flexible — plan for a typical season.";
+        ? `Arrival: ${formData.dateFrom}. Departure: ${formData.dateTo||"open-ended"}. CRITICAL: plan exactly ${activityDays} days (Day 1 = arrival day ${formData.dateFrom}, Day ${activityDays} = last full day before departure — do NOT create a separate departure day). Only suggest attractions confirmed open during these dates. Mention seasonal events or weather for this period.`
+        : `Dates flexible — plan for a typical season. Plan exactly ${activityDays} days.`;
 
       const dest = formData.surpriseMode
         ? `Best ${formData.style} destination within $${formData.budget} from ${formData.from||"the US"} for ${formData.travelers} travelers`
@@ -1473,11 +1475,12 @@ export default function TripForge() {
 2. Use real names — no generic placeholders.
 3. Budget accurately for ${formData.travelers} traveler(s).
 4. Keep descriptions SHORT — max 15 words each. Keep notes null unless essential.
-5. Return ONLY valid JSON. No markdown. No commentary. No trailing commas.
+5. The "days" array MUST contain exactly ${activityDays} entries — no more, no fewer. Day 1 is the arrival day. The departure day is NOT a separate day.
+6. Return ONLY valid JSON. No markdown. No commentary. No trailing commas.
 {"destination":"string","summary":"1 sentence overview + 1 sentence seasonal note","budgetBreakdown":{"flights":"~$XXX","hotels":"~$XXX/night","food":"~$XX/day","activities":"~$XXX total"},"days":[{"title":"string","theme":"string","activities":[{"time":"string","name":"string","description":"string max 15 words","cost":"string or null"}],"notes":null}],"tips":["string","string","string"]}`;
 
       const raw = await askClaude(system,
-        `Plan ${nights}-night ${formData.style} trip to ${dest}. ${formData.travelers} traveler(s). $${formData.budget} total budget. ${dateContext} Origin: ${formData.from||"unspecified"}.`,
+        `Plan a ${formData.style} trip to ${dest} with exactly ${activityDays} days in the itinerary. ${formData.travelers} traveler(s). $${formData.budget} total budget. ${dateContext} Origin: ${formData.from||"unspecified"}.`,
         apiKey, 3000
       );
       const parsed = parseJSON(raw);
