@@ -10,12 +10,15 @@ const PROXY_URL    = import.meta.env.VITE_PROXY_URL || "";
 const SITE_API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || "YOUR_ANTHROPIC_API_KEY_HERE";
 
 // ─── Affiliate links (deep-linked with dates + traveler count) ───────────────
+// Converts "New York" or "New York, NY, USA" → "new-york" for Skyscanner/Kayak slugs
+function slugify(s) { return cityOnly(s||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,""); }
+
 const AFF = {
   skyscanner: (from, to, date, dateReturn="", travelers=1) => {
-    const d1 = (date||"").replace(/-/g,"");
-    const d2 = (dateReturn||"").replace(/-/g,"");
-    const seg = d2 ? `${d1}/${d2}` : d1;
-    return `https://www.skyscanner.com/transport/flights/${encodeURIComponent(from||"")}/${encodeURIComponent(to||"")}/${seg}/?adults=${travelers}&utm_source=YOURAFFID`;
+    const d1 = (date||"").replace(/-/g,"").slice(2); // YYMMDD
+    const d2 = (dateReturn||"").replace(/-/g,"").slice(2);
+    const seg = d1 ? (d2 ? `${d1}/${d2}` : d1) : "any";
+    return `https://www.skyscanner.com/transport/flights/${slugify(from)||"anywhere"}/${slugify(to)||"anywhere"}/${seg}/?adults=${travelers}&utm_source=YOURAFFID`;
   },
   bookingHotels: (dest, checkin="", checkout="", travelers=1) =>
     `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(dest||"")}&checkin=${checkin}&checkout=${checkout}&group_adults=${travelers}&no_rooms=1&aid=YOURAFFID`,
@@ -24,23 +27,41 @@ const AFF = {
   expediaFlights: (from, to, date="", travelers=1) =>
     `https://www.expedia.com/Flights-Search?flight-type=on&mode=search&trip=oneway&leg1=from:${encodeURIComponent(from||"")},to:${encodeURIComponent(to||"")},departure:${date}TANYT&passengers=adults:${travelers},children:0,infantinlap:Y&affcid=YOURAFFID`,
   kayakCars: (dest, pickup="", dropoff="") => {
-    const base = `https://www.kayak.com/cars/${encodeURIComponent(dest||"")}`;
-    return (pickup && dropoff) ? `${base}/${pickup}/${dropoff}?affiliate=YOURAFFID` : `${base}?affiliate=YOURAFFID`;
+    const loc = slugify(dest||"");
+    const base = `https://www.kayak.com/cars/${loc}`;
+    return (pickup && dropoff) ? `${base}/${pickup}/${dropoff}` : base;
   },
+  kayakFlights: (from, to, date="", travelers=1) =>
+    `https://www.kayak.com/flights/${slugify(from)}-${slugify(to)}${date?"/"+date:""}?adults=${travelers}`,
   viator: (dest) =>
     `https://www.viator.com/searchResults/all?text=${encodeURIComponent(dest||"")}&pid=YOURAFFID`,
   googleFlights: (from, to, date="") =>
-    `https://www.google.com/travel/flights?q=flights+from+${encodeURIComponent(from||"")}+to+${encodeURIComponent(to||"")}${date?`+on+${date}`:""}`,
+    `https://www.google.com/travel/flights?q=flights+from+${encodeURIComponent(from||"")}+to+${encodeURIComponent(to||"")}${date?"+on+"+date:""}`,
 };
 
-// ─── Real aircraft photos ─────────────────────────────────────────────────────
+// ─── Aircraft photos — keyed by lowercase keyword for fuzzy matching ──────────
 const AIRLINE_PHOTOS = {
-  "Delta Airlines":    "https://images.unsplash.com/photo-1569154941061-e231b4725ef1?auto=format&fit=crop&w=900&h=480&q=85",
-  "American Airlines": "https://images.unsplash.com/photo-1436491865332-7a61a109cc05?auto=format&fit=crop&w=900&h=480&q=85",
-  "United Airlines":   "https://images.unsplash.com/photo-1540962357608-b2e3bba36c18?auto=format&fit=crop&w=900&h=480&q=85",
-  "Lufthansa":         "https://images.unsplash.com/photo-1570145007675-901791fe9fdb?auto=format&fit=crop&w=900&h=480&q=85",
-  "_fallback":         "https://images.unsplash.com/photo-1464037866556-abfb2b3b75a3?auto=format&fit=crop&w=900&h=480&q=85",
+  "delta":    "https://images.unsplash.com/photo-1569154941061-e231b4725ef1?auto=format&fit=crop&w=900&h=480&q=80",
+  "american": "https://images.unsplash.com/photo-1436491865332-7a61a109cc05?auto=format&fit=crop&w=900&h=480&q=80",
+  "united":   "https://images.unsplash.com/photo-1540962357608-b2e3bba36c18?auto=format&fit=crop&w=900&h=480&q=80",
+  "lufthansa":"https://images.unsplash.com/photo-1570145007675-901791fe9fdb?auto=format&fit=crop&w=900&h=480&q=80",
+  "emirates": "https://images.unsplash.com/photo-1551197640-4c1288d95b4f?auto=format&fit=crop&w=900&h=480&q=80",
+  "british":  "https://images.unsplash.com/photo-1474302770737-173ee21bab63?auto=format&fit=crop&w=900&h=480&q=80",
+  "air france":"https://images.unsplash.com/photo-1558618666-fcd25c85cd64?auto=format&fit=crop&w=900&h=480&q=80",
+  "southwest":"https://images.unsplash.com/photo-1520437358207-323b43b50729?auto=format&fit=crop&w=900&h=480&q=80",
+  "qatar":    "https://images.unsplash.com/photo-1556388158-158ea5ccacbd?auto=format&fit=crop&w=900&h=480&q=80",
+  "singapore":"https://images.unsplash.com/photo-1530521954074-e64f6810b32d?auto=format&fit=crop&w=900&h=480&q=80",
+  "jetblue":  "https://images.unsplash.com/photo-1587019158091-1a103c5dd17f?auto=format&fit=crop&w=900&h=480&q=80",
+  "alaska":   "https://images.unsplash.com/photo-1609726494499-27d3e942456c?auto=format&fit=crop&w=900&h=480&q=80",
+  "_fallback":"https://images.unsplash.com/photo-1436491865332-7a61a109cc05?auto=format&fit=crop&w=900&h=480&q=80",
 };
+// Fuzzy-match airline name against photo keys
+function getAirlinePhoto(airline) {
+  if (!airline) return AIRLINE_PHOTOS["_fallback"];
+  const a = airline.toLowerCase();
+  const key = Object.keys(AIRLINE_PHOTOS).find(k => k !== "_fallback" && (a.includes(k) || k.includes(a.split(" ")[0])));
+  return AIRLINE_PHOTOS[key] || AIRLINE_PHOTOS["_fallback"];
+}
 
 // ─── Car category photos (generic stock, keyed by category) ──────────────────
 const CAR_PHOTOS = {
@@ -458,12 +479,24 @@ function HeroSearch({ onSearch, loading }) {
         {multiCity ? (
           <div style={{marginBottom:16}}>
             {dests.map((d,i)=>(
-              <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:10,marginBottom:10,alignItems:"center"}}>
+              <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 1fr auto",gap:10,marginBottom:10,alignItems:"end"}}>
                 <CityInput value={d.city} onChange={v=>upd(i,"city",v)} placeholder={`Stop ${i+1} city — e.g. Rome, Barcelona`}/>
-                <Field icon="calendar" value={d.dateFrom} onChange={e=>upd(i,"dateFrom",e.target.value)} type="date" placeholder="Arrive at stop"/>
-                <Field icon="calendar" value={d.dateTo} onChange={e=>upd(i,"dateTo",e.target.value)} type="date" placeholder="Leave stop"/>
+                {/* Date range for each stop */}
+                <div style={{background:c.bg2,border:`1.5px solid ${c.border}`,borderRadius:12,display:"flex",alignItems:"stretch",overflow:"hidden"}}>
+                  <div style={{flex:1,padding:"6px 12px 8px"}}>
+                    <div style={{fontSize:9,fontWeight:700,color:c.textMuted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:2}}>Arrive</div>
+                    <input type="date" value={d.dateFrom||""} onChange={e=>upd(i,"dateFrom",e.target.value)}
+                      style={{background:"transparent",border:"none",outline:"none",color:c.text,fontSize:13,fontFamily:fontBody,width:"100%",cursor:"pointer"}}/>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",padding:"0 6px",color:c.textSubtle,fontSize:14,flexShrink:0}}>→</div>
+                  <div style={{flex:1,padding:"6px 12px 8px",borderLeft:`1px solid ${c.border}`}}>
+                    <div style={{fontSize:9,fontWeight:700,color:c.textMuted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:2}}>Leave</div>
+                    <input type="date" value={d.dateTo||""} onChange={e=>upd(i,"dateTo",e.target.value)}
+                      style={{background:"transparent",border:"none",outline:"none",color:c.text,fontSize:13,fontFamily:fontBody,width:"100%",cursor:"pointer"}}/>
+                  </div>
+                </div>
                 {dests.length>2
-                  ? <button onClick={()=>setDests(d=>d.filter((_,j)=>j!==i))} style={{background:"none",border:"none",cursor:"pointer",padding:6,borderRadius:8}}><Icon name="trash" size={16} color={c.danger}/></button>
+                  ? <button onClick={()=>setDests(d=>d.filter((_,j)=>j!==i))} style={{background:"none",border:"none",cursor:"pointer",padding:6,borderRadius:8,marginBottom:2}}><Icon name="trash" size={16} color={c.danger}/></button>
                   : <div/>}
               </div>
             ))}
@@ -472,22 +505,44 @@ function HeroSearch({ onSearch, loading }) {
             </Btn>
           </div>
         ) : (
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:12,marginBottom:16}}>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12,marginBottom:16}}>
             <CityInput value={dests[0]?.city} onChange={v=>upd(0,"city",v)} placeholder="Destination city — e.g. Paris, Tokyo, Bali"/>
-            <Field icon="calendar" value={dests[0]?.dateFrom} onChange={e=>upd(0,"dateFrom",e.target.value)} type="date" placeholder="✈️ Fly out date"/>
-            <Field icon="calendar" value={dests[0]?.dateTo} onChange={e=>upd(0,"dateTo",e.target.value)} type="date" placeholder="🏠 Return date"/>
+            {/* Date range — labelled, arrow between */}
+            <div style={{background:c.bg2,border:`1.5px solid ${c.border}`,borderRadius:12,display:"flex",alignItems:"stretch",overflow:"hidden"}}>
+              <div style={{flex:1,padding:"6px 14px 8px"}}>
+                <div style={{fontSize:9,fontWeight:700,color:c.textMuted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:2}}>✈️ Depart</div>
+                <input type="date" value={dests[0]?.dateFrom||""} onChange={e=>upd(0,"dateFrom",e.target.value)}
+                  style={{background:"transparent",border:"none",outline:"none",color:c.text,fontSize:13,fontFamily:fontBody,width:"100%",cursor:"pointer"}}/>
+              </div>
+              <div style={{display:"flex",alignItems:"center",padding:"0 8px",color:c.accentHi,fontSize:16,flexShrink:0,fontWeight:700}}>→</div>
+              <div style={{flex:1,padding:"6px 14px 8px",borderLeft:`1px solid ${c.border}`}}>
+                <div style={{fontSize:9,fontWeight:700,color:c.textMuted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:2}}>🏠 Return</div>
+                <input type="date" value={dests[0]?.dateTo||""} onChange={e=>upd(0,"dateTo",e.target.value)}
+                  style={{background:"transparent",border:"none",outline:"none",color:c.text,fontSize:13,fontFamily:fontBody,width:"100%",cursor:"pointer"}}/>
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Shared row — "Flying from" appears exactly ONCE */}
+        {/* Shared row */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:18}}>
           <CityInput value={from} onChange={v=>setFrom(v)} placeholder="Departure city — e.g. New York, London"/>
           <Field icon="dollar" value={budget} onChange={e=>setBudget(e.target.value)} placeholder="Total budget ($)" type="number"/>
-          <div style={{position:"relative"}}>
-            <span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",opacity:0.5}}><Icon name="users" size={15} color={c.text}/></span>
-            <select value={travelers} onChange={e=>setTravelers(e.target.value)} style={selStyle}>
-              {[1,2,3,4,5,6,8,10].map(n=><option key={n} value={n}>{n} traveler{n>1?"s":""}</option>)}
-            </select>
+          {/* Travelers stepper — any number, no dropdown */}
+          <div style={{background:c.bg2,border:`1.5px solid ${c.border}`,borderRadius:12,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"0 10px",height:50}}>
+            <div style={{display:"flex",alignItems:"center",gap:7}}>
+              <span style={{opacity:0.5,display:"inline-flex"}}><Icon name="users" size={15} color={c.text}/></span>
+              <span style={{fontSize:11,fontWeight:700,color:c.textMuted,letterSpacing:"0.07em",textTransform:"uppercase"}}>Travelers</span>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:6}}>
+              <button onClick={()=>setTravelers(t=>String(Math.max(1,Number(t)-1)))}
+                style={{width:28,height:28,borderRadius:8,border:`1.5px solid ${c.border}`,background:c.surface,color:c.text,fontSize:17,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,fontFamily:fontBody}}>−</button>
+              <input type="number" min="1" max="99" value={travelers}
+                onChange={e=>setTravelers(String(Math.max(1,Number(e.target.value)||1)))}
+                style={{width:34,textAlign:"center",background:"transparent",border:"none",outline:"none",color:c.text,fontSize:15,fontWeight:800,fontFamily:fontBody,MozAppearance:"textfield"}}/>
+              <button onClick={()=>setTravelers(t=>String(Number(t)+1))}
+                style={{width:28,height:28,borderRadius:8,border:`1.5px solid ${c.border}`,background:c.surface,color:c.text,fontSize:17,fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,fontFamily:fontBody}}>+</button>
+            </div>
           </div>
         </div>
 
@@ -903,7 +958,7 @@ function FlightsTab({ form, settings, apiKey }) {
           {name:"🔍 Skyscanner", url:skUrl, primary:true},
           {name:"Google Flights", url:AFF.googleFlights(fromCity, destCity, form.dateFrom)},
           {name:"Expedia", url:AFF.expediaFlights(fromCity, destCity, form.dateFrom, form.travelers)},
-          {name:"Kayak", url:`https://www.kayak.com/flights/${encodeURIComponent(fromCity)}-${encodeURIComponent(destCity)}${form.dateFrom?"/"+form.dateFrom:""}`},
+          {name:"Kayak", url:AFF.kayakFlights(fromCity, destCity, form.dateFrom, form.travelers)},
         ].map(s => (
           <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
             style={{padding:"10px 18px",background:s.primary?c.accentLow:c.surface,border:`1.5px solid ${s.primary?c.accentBorder:c.border}`,borderRadius:10,color:s.primary?c.accentHi:c.textMuted,textDecoration:"none",fontSize:13,fontWeight:700,fontFamily:fontBody}}>
@@ -946,7 +1001,7 @@ function FlightsTab({ form, settings, apiKey }) {
           <div key={i} style={{background:c.surface,border:`1.5px solid ${i===0?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden",position:"relative"}}>
             {i===0 && <div style={{position:"absolute",top:14,right:14,zIndex:3,background:c.accent,color:"#fff",fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:20,letterSpacing:"0.08em"}}>TOP PICK</div>}
             <div style={{position:"relative",height:168,overflow:"hidden"}}>
-              <Img src={AIRLINE_PHOTOS[f.airline] || AIRLINE_PHOTOS["_fallback"]} fallbackSrc={AIRLINE_PHOTOS["_fallback"]} alt={`${f.airline} aircraft`} iconName="plane"/>
+              <Img src={getAirlinePhoto(f.airline)} fallbackSrc={AIRLINE_PHOTOS["_fallback"]} alt={`${f.airline} aircraft`} iconName="plane"/>
               <div style={{position:"absolute",inset:0,background:"linear-gradient(to right,rgba(0,0,0,0.75) 0%,rgba(0,0,0,0.15) 65%,transparent 100%)"}}/>
               <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"14px 20px"}}>
                 <div style={{color:"#fff",fontWeight:800,fontSize:20,letterSpacing:"-0.02em",textShadow:"0 1px 4px rgba(0,0,0,0.4)"}}>{f.airline}</div>
@@ -973,11 +1028,19 @@ function FlightsTab({ form, settings, apiKey }) {
               <div style={{textAlign:"right"}}>
                 <div style={{color:c.accent,fontWeight:900,fontSize:26,letterSpacing:"-0.03em"}}>~${f.estimatedPrice}</div>
                 <div style={{color:c.textMuted,fontSize:11,margin:"2px 0 4px",fontStyle:"italic"}}>est. per person</div>
-                <div style={{color:f.refundable?c.success:c.danger,fontSize:12,fontWeight:700,margin:"2px 0 10px"}}>{f.refundable?"✓ Refundable":"Non-refundable"}</div>
-                <a href={AFF.skyscanner(f.from||fromCity, f.to||destCity, form.dateFrom, form.dateTo, form.travelers)} target="_blank" rel="noopener noreferrer"
-                  style={{display:"inline-block",padding:"10px 22px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800,boxShadow:`0 6px 20px ${c.accentBorder}`}}>
-                  Search →
-                </a>
+                <div style={{color:f.refundable?c.success:c.danger,fontSize:12,fontWeight:700,margin:"2px 0 12px"}}>{f.refundable?"✓ Refundable":"Non-refundable"}</div>
+                <div style={{display:"flex",flexDirection:"column",gap:7,alignItems:"flex-end"}}>
+                  {[
+                    {name:"Skyscanner",  url:AFF.skyscanner(f.from||fromCity, f.to||destCity, form.dateFrom, form.dateTo, form.travelers), primary:true},
+                    {name:"Google Flights", url:AFF.googleFlights(f.from||fromCity, f.to||destCity, form.dateFrom)},
+                    {name:"Expedia",     url:AFF.expediaFlights(f.from||fromCity, f.to||destCity, form.dateFrom, form.travelers)},
+                  ].map(s=>(
+                    <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
+                      style={{display:"inline-block",padding:"8px 16px",background:s.primary?`linear-gradient(135deg,${c.accent},${c.accentHi})`:c.bg2,border:`1.5px solid ${s.primary?c.accentBorder:c.border}`,borderRadius:9,color:s.primary?"#fff":c.textMuted,textDecoration:"none",fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>
+                      {s.name} →
+                    </a>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -1095,12 +1158,18 @@ function HotelsTab({ form, settings, apiKey }) {
                   </span>
                 ))}
               </div>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span style={{fontSize:12,fontWeight:700,color:h.refundable?c.success:c.danger}}>{h.refundable?"Free cancellation":"Non-refundable"}</span>
-                <a href={`https://www.booking.com/search.html?ss=${encodeURIComponent(h.name+" "+cityOnly(form.destination))}&checkin=${form.dateFrom||""}&checkout=${form.dateTo||""}&group_adults=${form.travelers||2}&no_rooms=1&aid=YOURAFFID`} target="_blank" rel="noopener noreferrer"
-                  style={{padding:"9px 18px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:13,fontWeight:800}}>
-                  Book →
-                </a>
+              <span style={{fontSize:12,fontWeight:700,color:h.refundable?c.success:c.danger,display:"block",marginBottom:10}}>{h.refundable?"Free cancellation":"Non-refundable"}</span>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {[
+                  {name:"Booking.com", url:`https://www.booking.com/search.html?ss=${encodeURIComponent(h.name+" "+cityOnly(form.destination))}&checkin=${form.dateFrom||""}&checkout=${form.dateTo||""}&group_adults=${form.travelers||2}&no_rooms=1&aid=YOURAFFID`, primary:true},
+                  {name:"Expedia",     url:AFF.expediaHotels(h.name+" "+cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers)},
+                  {name:"Hotels.com",  url:`https://www.hotels.com/search.do?q-destination=${encodeURIComponent(h.name+" "+cityOnly(form.destination))}&q-check-in=${form.dateFrom||""}&q-check-out=${form.dateTo||""}&q-rooms=1&q-room-0-adults=${form.travelers||2}`},
+                ].map(s=>(
+                  <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
+                    style={{flex:1,textAlign:"center",padding:"9px 10px",background:s.primary?`linear-gradient(135deg,${c.accent},${c.accentHi})`:c.bg2,border:`1.5px solid ${s.primary?c.accentBorder:c.border}`,borderRadius:9,color:s.primary?"#fff":c.textMuted,textDecoration:"none",fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>
+                    {s.name}
+                  </a>
+                ))}
               </div>
             </div>
           </div>
@@ -1209,11 +1278,19 @@ function CarsTab({ form, apiKey }) {
                   {car.features.map(f => <span key={f} style={{background:c.bg2,border:`1px solid ${c.border}`,borderRadius:999,padding:"3px 9px",fontSize:11,color:c.textMuted}}>{f}</span>)}
                 </div>
               )}
-              <div style={{color:c.accent,fontWeight:900,fontSize:22,marginBottom:14}}>~${car.estimatedDailyRate}<span style={{color:c.textMuted,fontSize:12,fontWeight:500}}>/day</span></div>
-              <a href={`https://www.rentalcars.com/SearchResults.do?affiliateCode=YOURAFFID&preflang=en&location=${encodeURIComponent(cityOnly(form.destination)||"")}&d1=${form.dateFrom||""}&d2=${form.dateTo||""}&carCategory=${encodeURIComponent(car.category||"")}&carName=${encodeURIComponent(car.example||"")}`} target="_blank" rel="noopener noreferrer"
-                style={{display:"block",textAlign:"center",padding:"11px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800}}>
-                Find this car →
-              </a>
+              <div style={{color:c.accent,fontWeight:900,fontSize:22,marginBottom:12}}>~${car.estimatedDailyRate}<span style={{color:c.textMuted,fontSize:12,fontWeight:500}}>/day</span></div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                {[
+                  {name:"Kayak",        url:AFF.kayakCars(cityOnly(form.destination), form.dateFrom, form.dateTo), primary:true},
+                  {name:"Expedia",      url:`https://www.expedia.com/Cars/search?locn=${encodeURIComponent(cityOnly(form.destination)||"")}&startDate=${form.dateFrom||""}&endDate=${form.dateTo||""}`},
+                  {name:"RentalCars",   url:`https://www.rentalcars.com/SearchResults.do?affiliateCode=YOURAFFID&location=${encodeURIComponent(cityOnly(form.destination)||"")}&d1=${form.dateFrom||""}&d2=${form.dateTo||""}`},
+                ].map(s=>(
+                  <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
+                    style={{flex:1,textAlign:"center",padding:"9px 8px",background:s.primary?`linear-gradient(135deg,${c.accent},${c.accentHi})`:c.bg2,border:`1.5px solid ${s.primary?c.accentBorder:c.border}`,borderRadius:9,color:s.primary?"#fff":c.textMuted,textDecoration:"none",fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>
+                    {s.name}
+                  </a>
+                ))}
+              </div>
             </div>
           </div>
         ))}
@@ -1548,6 +1625,7 @@ export default function TripForge() {
         @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}
         .pill-scroll::-webkit-scrollbar{display:none;}
         .pill-scroll{-ms-overflow-style:none;scrollbar-width:none;}
+        input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
         input[type=date]::-webkit-calendar-picker-indicator{filter:${dark?"invert(0.6)":"none"};opacity:0.6;cursor:pointer;}
         ::-webkit-scrollbar{width:4px;height:4px;}
         ::-webkit-scrollbar-thumb{background:${c.accentBorder};border-radius:4px;}
