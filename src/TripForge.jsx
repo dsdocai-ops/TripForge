@@ -170,6 +170,8 @@ function parseJSON(raw) {
 function sGet(k) { try { const v = sessionStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } }
 function sSet(k, v) { try { sessionStorage.setItem(k, JSON.stringify(v)); } catch {} }
 function sCacheKey(...parts) { return "tf_" + parts.map(p => String(p||"").toLowerCase().replace(/\s+/g,"_")).join("_"); }
+// Strips region/country suffix from CityInput values ("Paris, Île-de-France, France" → "Paris")
+function cityOnly(s) { return (s||"").split(",")[0].trim(); }
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 function Icon({ name, size=20, color="currentColor" }) {
@@ -745,7 +747,7 @@ function MapTab({ tripData, form }) {
     if (!loaded||!mapRef.current||!tripData) return;
     const L=window.L;
     if (inst.current) { inst.current.remove(); inst.current=null; }
-    fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(form.destination||"")}&count=1`)
+    fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityOnly(form.destination)||"")}&count=1`)
       .then(r=>r.json()).then(data=>{
         const loc=data.results?.[0]; if(!loc) { setMapError(true); return; }
         const map=L.map(mapRef.current).setView([loc.latitude,loc.longitude],12); inst.current=map;
@@ -814,8 +816,8 @@ function RestaurantsTab({ form, apiKey }) {
       )}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(290px,1fr))",gap:14,marginBottom:20}}>
         {recs?.restaurants?.map((r,i)=>(
-          <div key={i} style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:16,padding:20}}>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+          <div key={i} style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:16,padding:20,display:"flex",flexDirection:"column",gap:0}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
               <div>
                 <div style={{color:c.text,fontWeight:700,fontSize:16}}>{r.name}</div>
                 <div style={{color:c.textMuted,fontSize:13,marginTop:3}}>{r.cuisine} · {r.neighborhood}</div>
@@ -823,13 +825,27 @@ function RestaurantsTab({ form, apiKey }) {
               <span style={{color:pc(r.priceRange),fontWeight:800,fontSize:15,flexShrink:0,marginLeft:8}}>{r.priceRange}</span>
             </div>
             {r.mustTry&&<div style={{background:c.accentLow,border:`1px solid ${c.accentBorder}`,borderRadius:9,padding:"8px 12px",marginBottom:10}}><span style={{color:c.accent,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>Must try: </span><span style={{color:c.text,fontSize:13}}>{r.mustTry}</span></div>}
-            {r.tip&&<p style={{color:c.textMuted,fontSize:13,margin:0,lineHeight:1.6}}>💡 {r.tip}</p>}
+            {r.tip&&<p style={{color:c.textMuted,fontSize:13,margin:"0 0 12px",lineHeight:1.6}}>💡 {r.tip}</p>}
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:"auto",paddingTop:10,borderTop:`1px solid ${c.border}`}}>
+              <a href={`https://www.google.com/maps/search/${encodeURIComponent(r.name+" "+cityOnly(form.destination))}`} target="_blank" rel="noopener noreferrer"
+                style={{padding:"6px 12px",background:c.bg2,border:`1px solid ${c.border}`,borderRadius:8,color:c.textMuted,textDecoration:"none",fontSize:12,fontWeight:600,fontFamily:fontBody}}>
+                📍 Maps
+              </a>
+              <a href={`https://www.opentable.com/s?term=${encodeURIComponent(r.name)}&metroId=&locale=en-US`} target="_blank" rel="noopener noreferrer"
+                style={{padding:"6px 12px",background:c.bg2,border:`1px solid ${c.border}`,borderRadius:8,color:c.textMuted,textDecoration:"none",fontSize:12,fontWeight:600,fontFamily:fontBody}}>
+                🍽️ OpenTable
+              </a>
+              <a href={`https://www.yelp.com/search?find_desc=${encodeURIComponent(r.name)}&find_loc=${encodeURIComponent(cityOnly(form.destination))}`} target="_blank" rel="noopener noreferrer"
+                style={{padding:"6px 12px",background:c.bg2,border:`1px solid ${c.border}`,borderRadius:8,color:c.textMuted,textDecoration:"none",fontSize:12,fontWeight:600,fontFamily:fontBody}}>
+                ⭐ Yelp
+              </a>
+            </div>
           </div>
         ))}
       </div>
       <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:12,padding:16}}>
-        <p style={{color:c.textMuted,fontSize:13,margin:0,lineHeight:1.6}}><strong style={{color:c.text}}>Book a table: </strong>
-          {[{name:"OpenTable",url:`https://www.opentable.com/s?term=${encodeURIComponent(form.destination||"")}`},{name:"Yelp",url:`https://www.yelp.com/search?find_desc=Restaurants&find_loc=${encodeURIComponent(form.destination||"")}`},{name:"TripAdvisor",url:`https://www.tripadvisor.com/Search?q=${encodeURIComponent((form.destination||"")+" restaurants")}`}].map((s,i)=><span key={s.name}><a href={s.url} target="_blank" rel="noopener noreferrer" style={{color:c.accentHi,fontWeight:600}}>{s.name}</a>{i<2?" · ":""}</span>)}
+        <p style={{color:c.textMuted,fontSize:13,margin:0,lineHeight:1.6}}><strong style={{color:c.text}}>Browse all restaurants: </strong>
+          {[{name:"OpenTable",url:`https://www.opentable.com/s?term=${encodeURIComponent(cityOnly(form.destination)||"")}`},{name:"Yelp",url:`https://www.yelp.com/search?find_desc=Restaurants&find_loc=${encodeURIComponent(cityOnly(form.destination)||"")}`},{name:"TripAdvisor",url:`https://www.tripadvisor.com/Search?q=${encodeURIComponent(cityOnly(form.destination||"")+" restaurants")}`}].map((s,i)=><span key={s.name}><a href={s.url} target="_blank" rel="noopener noreferrer" style={{color:c.accentHi,fontWeight:600}}>{s.name}</a>{i<2?" · ":""}</span>)}
         </p>
       </div>
     </div>
@@ -841,7 +857,9 @@ function FlightsTab({ form, settings, apiKey }) {
   const { c, fontBody } = useTokens();
   const [flights, setFlights] = useState(null);
   const [loading, setLoading] = useState(false);
-  const skUrl = AFF.skyscanner(form.from, form.destination, form.dateFrom, form.dateTo, form.travelers);
+  const fromCity = cityOnly(form.from);
+  const destCity = cityOnly(form.destination);
+  const skUrl = AFF.skyscanner(fromCity, destCity, form.dateFrom, form.dateTo, form.travelers);
 
   async function fetchFlights() {
     if (!form.destination || !apiKey) return;
@@ -883,9 +901,9 @@ function FlightsTab({ form, settings, apiKey }) {
       <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
         {[
           {name:"🔍 Skyscanner", url:skUrl, primary:true},
-          {name:"Google Flights", url:AFF.googleFlights(form.from, form.destination, form.dateFrom)},
-          {name:"Expedia", url:AFF.expediaFlights(form.from, form.destination, form.dateFrom, form.travelers)},
-          {name:"Kayak", url:"https://www.kayak.com/flights"},
+          {name:"Google Flights", url:AFF.googleFlights(fromCity, destCity, form.dateFrom)},
+          {name:"Expedia", url:AFF.expediaFlights(fromCity, destCity, form.dateFrom, form.travelers)},
+          {name:"Kayak", url:`https://www.kayak.com/flights/${encodeURIComponent(fromCity)}-${encodeURIComponent(destCity)}${form.dateFrom?"/"+form.dateFrom:""}`},
         ].map(s => (
           <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
             style={{padding:"10px 18px",background:s.primary?c.accentLow:c.surface,border:`1.5px solid ${s.primary?c.accentBorder:c.border}`,borderRadius:10,color:s.primary?c.accentHi:c.textMuted,textDecoration:"none",fontSize:13,fontWeight:700,fontFamily:fontBody}}>
@@ -956,7 +974,7 @@ function FlightsTab({ form, settings, apiKey }) {
                 <div style={{color:c.accent,fontWeight:900,fontSize:26,letterSpacing:"-0.03em"}}>~${f.estimatedPrice}</div>
                 <div style={{color:c.textMuted,fontSize:11,margin:"2px 0 4px",fontStyle:"italic"}}>est. per person</div>
                 <div style={{color:f.refundable?c.success:c.danger,fontSize:12,fontWeight:700,margin:"2px 0 10px"}}>{f.refundable?"✓ Refundable":"Non-refundable"}</div>
-                <a href={skUrl} target="_blank" rel="noopener noreferrer"
+                <a href={AFF.skyscanner(f.from||fromCity, f.to||destCity, form.dateFrom, form.dateTo, form.travelers)} target="_blank" rel="noopener noreferrer"
                   style={{display:"inline-block",padding:"10px 22px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800,boxShadow:`0 6px 20px ${c.accentBorder}`}}>
                   Search →
                 </a>
@@ -1012,11 +1030,11 @@ function HotelsTab({ form, settings, apiKey }) {
       <AdSlot/>
       <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
         {[
-          {name:"Booking.com", url:AFF.bookingHotels(form.destination, form.dateFrom, form.dateTo, form.travelers)},
-          {name:"Expedia", url:AFF.expediaHotels(form.destination, form.dateFrom, form.dateTo, form.travelers)},
-          {name:"Hotels.com", url:`https://www.hotels.com/search.do?q-destination=${encodeURIComponent(form.destination||"")}&q-check-in=${form.dateFrom||""}&q-check-out=${form.dateTo||""}&q-rooms=1&q-room-0-adults=${form.travelers||2}`},
-          {name:"TripAdvisor", url:`https://www.tripadvisor.com/Search?q=${encodeURIComponent((form.destination||"")+" hotels")}`},
-          {name:"Priceline", url:`https://www.priceline.com/relax/in/${encodeURIComponent(form.destination||"")}`},
+          {name:"Booking.com", url:AFF.bookingHotels(cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers)},
+          {name:"Expedia", url:AFF.expediaHotels(cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers)},
+          {name:"Hotels.com", url:`https://www.hotels.com/search.do?q-destination=${encodeURIComponent(cityOnly(form.destination)||"")}&q-check-in=${form.dateFrom||""}&q-check-out=${form.dateTo||""}&q-rooms=1&q-room-0-adults=${form.travelers||2}`},
+          {name:"TripAdvisor", url:`https://www.tripadvisor.com/Search?q=${encodeURIComponent(cityOnly(form.destination||"")+" hotels")}`},
+          {name:"Priceline", url:`https://www.priceline.com/relax/in/${encodeURIComponent(cityOnly(form.destination)||"")}`},
         ].map(s => (
           <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
             style={{padding:"10px 16px",background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:10,color:c.textMuted,textDecoration:"none",fontSize:13,fontWeight:600,fontFamily:fontBody}}>
@@ -1079,9 +1097,9 @@ function HotelsTab({ form, settings, apiKey }) {
               </div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontSize:12,fontWeight:700,color:h.refundable?c.success:c.danger}}>{h.refundable?"Free cancellation":"Non-refundable"}</span>
-                <a href={AFF.bookingHotels(form.destination, form.dateFrom, form.dateTo, form.travelers)} target="_blank" rel="noopener noreferrer"
+                <a href={`https://www.booking.com/search.html?ss=${encodeURIComponent(h.name+" "+cityOnly(form.destination))}&checkin=${form.dateFrom||""}&checkout=${form.dateTo||""}&group_adults=${form.travelers||2}&no_rooms=1&aid=YOURAFFID`} target="_blank" rel="noopener noreferrer"
                   style={{padding:"9px 18px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:13,fontWeight:800}}>
-                  Search →
+                  Book →
                 </a>
               </div>
             </div>
@@ -1142,9 +1160,9 @@ function CarsTab({ form, apiKey }) {
       <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
         {[
           {name:"Costco Travel", url:"https://www.costcotravel.com/Rental-Cars", badge:"Save up to 25%"},
-          {name:"Kayak", url:AFF.kayakCars(form.destination, form.dateFrom, form.dateTo)},
-          {name:"RentalCars", url:"https://www.rentalcars.com"},
-          {name:"Expedia Cars", url:"https://www.expedia.com/Cars"},
+          {name:"Kayak", url:AFF.kayakCars(cityOnly(form.destination), form.dateFrom, form.dateTo)},
+          {name:"RentalCars", url:`https://www.rentalcars.com/SearchResults.do?affiliateCode=YOURAFFID&preflang=en&adplat=search&location=${encodeURIComponent(cityOnly(form.destination)||"")}&d1=${form.dateFrom||""}&d2=${form.dateTo||""}`},
+          {name:"Expedia Cars", url:`https://www.expedia.com/Cars/search?location=${encodeURIComponent(cityOnly(form.destination)||"")}&startDate=${form.dateFrom||""}&endDate=${form.dateTo||""}`},
         ].map(s => (
           <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
             style={{padding:"10px 16px",background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:10,color:c.text,textDecoration:"none",fontSize:13,display:"flex",flexDirection:"column",gap:3,fontFamily:fontBody}}>
@@ -1192,9 +1210,9 @@ function CarsTab({ form, apiKey }) {
                 </div>
               )}
               <div style={{color:c.accent,fontWeight:900,fontSize:22,marginBottom:14}}>~${car.estimatedDailyRate}<span style={{color:c.textMuted,fontSize:12,fontWeight:500}}>/day</span></div>
-              <a href={AFF.kayakCars(form.destination, form.dateFrom, form.dateTo)} target="_blank" rel="noopener noreferrer"
+              <a href={`https://www.rentalcars.com/SearchResults.do?affiliateCode=YOURAFFID&preflang=en&location=${encodeURIComponent(cityOnly(form.destination)||"")}&d1=${form.dateFrom||""}&d2=${form.dateTo||""}&carCategory=${encodeURIComponent(car.category||"")}&carName=${encodeURIComponent(car.example||"")}`} target="_blank" rel="noopener noreferrer"
                 style={{display:"block",textAlign:"center",padding:"11px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800}}>
-                Compare rates →
+                Find this car →
               </a>
             </div>
           </div>
@@ -1214,7 +1232,7 @@ function WeatherTab({ form }) {
     if (!form.destination) return;
     setLoading(true);
     try {
-      const geo=await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(form.destination)}&count=1`).then(r=>r.json());
+      const geo=await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityOnly(form.destination))}&count=1`).then(r=>r.json());
       if (!geo.results?.length){setWx({error:"We couldn't find weather data for that destination. Please check the spelling and try again."});setLoading(false);return;}
       const {latitude,longitude,name,country}=geo.results[0];
       const df=form.dateFrom||new Date().toISOString().split("T")[0];
@@ -1481,7 +1499,7 @@ export default function TripForge() {
 
       const raw = await askClaude(system,
         `Plan a ${formData.style} trip to ${dest} with exactly ${activityDays} days in the itinerary. ${formData.travelers} traveler(s). $${formData.budget} total budget. ${dateContext} Origin: ${formData.from||"unspecified"}.`,
-        apiKey, 3000
+        apiKey, 4096
       );
       const parsed = parseJSON(raw);
       sSet(ck, parsed);
