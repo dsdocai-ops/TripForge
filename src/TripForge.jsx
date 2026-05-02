@@ -128,20 +128,29 @@ async function askClaude(system, user, apiKey, maxTokens = 4096) {
   const headers = useProxy
     ? { "Content-Type": "application/json" }
     : { "Content-Type": "application/json", "x-api-key": apiKey, "anthropic-version": "2023-06-01", "anthropic-dangerous-direct-browser-access": "true" };
-  const res = await fetch(url, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ model: CLAUDE_MODEL, max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] }),
-  });
-  if (!res.ok) { const e = await res.json(); throw new Error(e.error?.message||"API error"); }
-  const d = await res.json();
-  return d.content.map(b=>b.text||"").join("");
+  const body = JSON.stringify({ model: CLAUDE_MODEL, max_tokens: maxTokens, system, messages: [{ role: "user", content: user }] });
+  let lastErr;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(url, { method: "POST", headers, body });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error?.message || "API error"); }
+      const d = await res.json();
+      return d.content.map(b => b.text || "").join("");
+    } catch(e) {
+      lastErr = e;
+      if (attempt === 0) await new Promise(r => setTimeout(r, 1200));
+    }
+  }
+  throw lastErr;
 }
 function parseJSON(raw) {
-  let clean = raw.replace(/```json|```/g,"").trim();
-  const s = clean.indexOf("{")!==-1 ? clean.indexOf("{") : clean.indexOf("[");
+  let clean = raw.replace(/```json|```/g, "").trim();
+  // Pick whichever opening bracket comes first — fixes arrays being sliced incorrectly
+  const iObj = clean.indexOf("{");
+  const iArr = clean.indexOf("[");
+  const s = iArr !== -1 && (iObj === -1 || iArr < iObj) ? iArr : iObj;
+  if (s === -1) throw new Error("No JSON");
   clean = clean.slice(s);
-  // Try straight parse first
   try { return JSON.parse(clean); } catch(_) {}
   // Truncated mid-JSON — attempt to close open structures
   let attempt = clean;
@@ -264,6 +273,92 @@ function Field({ icon, value, onChange, placeholder, type="text", style={} }) {
   );
 }
 
+// ─── City autocomplete (Open-Meteo geocoding) ────────────────────────────────
+function CityInput({ value, onChange, placeholder, style={} }) {
+  const { c, fontBody } = useTokens();
+  const [query, setQuery]       = useState(value || "");
+  const [results, setResults]   = useState([]);
+  const [open, setOpen]         = useState(false);
+  const [fetching, setFetching] = useState(false);
+  const [focused, setFocused]   = useState(false);
+  const timer  = useRef(null);
+  const wrapRef = useRef(null);
+
+  useEffect(() => { if (value !== query) setQuery(value || ""); }, [value]);
+
+  useEffect(() => {
+    function close(e) { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); }
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, []);
+
+  function handleChange(e) {
+    const q = e.target.value;
+    setQuery(q); onChange(q);
+    clearTimeout(timer.current);
+    if (q.length < 2) { setResults([]); setOpen(false); return; }
+    timer.current = setTimeout(async () => {
+      setFetching(true);
+      try {
+        const res = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(q)}&count=8&language=en&format=json`);
+        const data = await res.json();
+        setResults(data.results || []);
+        setOpen(true);
+      } catch {}
+      setFetching(false);
+    }, 350);
+  }
+
+  function select(item) {
+    const parts = [item.name];
+    if (item.admin1 && item.admin1 !== item.name) parts.push(item.admin1);
+    parts.push(item.country);
+    const label = parts.filter(Boolean).join(", ");
+    setQuery(label); onChange(label);
+    setResults([]); setOpen(false);
+  }
+
+  const showDropdown = open && results.length > 0;
+  return (
+    <div ref={wrapRef} style={{position:"relative",...style}}>
+      <div style={{position:"relative"}}>
+        <span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",opacity:focused?0.9:0.5,transition:"opacity 0.15s",zIndex:1}}>
+          <Icon name="pin" size={15} color={c.text}/>
+        </span>
+        <input
+          type="text" value={query} onChange={handleChange} placeholder={placeholder}
+          autoComplete="off"
+          onFocus={()=>{ setFocused(true); if (results.length) setOpen(true); }}
+          onBlur={()=>setFocused(false)}
+          style={{
+            width:"100%", padding:"13px 36px 13px 40px",
+            background:focused?c.surfaceHover:c.bg2,
+            border:`1.5px solid ${focused?c.accentBorder:c.border}`,
+            borderRadius: showDropdown ? "12px 12px 0 0" : 12,
+            color:c.text, fontSize:14, fontFamily:fontBody,
+            outline:"none", boxSizing:"border-box", transition:"all 0.15s", WebkitAppearance:"none",
+          }}
+        />
+        {fetching && <span style={{position:"absolute",right:12,top:"50%",transform:"translateY(-50%)",color:c.textSubtle,fontSize:12}}>…</span>}
+      </div>
+      {showDropdown && (
+        <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:600,background:c.surface,border:`1.5px solid ${c.accentBorder}`,borderTop:"none",borderRadius:"0 0 12px 12px",overflow:"hidden",boxShadow:`0 8px 24px rgba(0,0,0,0.18)`}}>
+          {results.slice(0, 6).map((r, i) => (
+            <button key={r.id||i} onMouseDown={()=>select(r)}
+              style={{width:"100%",textAlign:"left",padding:"10px 16px",background:"none",border:"none",borderTop:i>0?`1px solid ${c.border}`:"none",cursor:"pointer",fontFamily:fontBody,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+              <div>
+                <span style={{color:c.text,fontSize:14,fontWeight:600}}>{r.name}</span>
+                {r.admin1 && r.admin1 !== r.name && <span style={{color:c.textMuted,fontSize:13}}>{", "}{r.admin1}</span>}
+              </div>
+              <span style={{color:c.textSubtle,fontSize:12,fontWeight:700,flexShrink:0}}>{r.country_code}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── API Key Modal removed — key is now set server-side via SITE_API_KEY ────────
 
 // ─── Settings Panel ───────────────────────────────────────────────────────────
@@ -362,7 +457,7 @@ function HeroSearch({ onSearch, loading }) {
           <div style={{marginBottom:16}}>
             {dests.map((d,i)=>(
               <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",gap:10,marginBottom:10,alignItems:"center"}}>
-                <Field icon="pin" value={d.city} onChange={e=>upd(i,"city",e.target.value)} placeholder={`Stop ${i+1} — city`}/>
+                <CityInput value={d.city} onChange={v=>upd(i,"city",v)} placeholder={`Stop ${i+1} city — e.g. Rome, Barcelona`}/>
                 <Field icon="calendar" value={d.dateFrom} onChange={e=>upd(i,"dateFrom",e.target.value)} type="date" placeholder="Arrive at stop"/>
                 <Field icon="calendar" value={d.dateTo} onChange={e=>upd(i,"dateTo",e.target.value)} type="date" placeholder="Leave stop"/>
                 {dests.length>2
@@ -376,7 +471,7 @@ function HeroSearch({ onSearch, loading }) {
           </div>
         ) : (
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))",gap:12,marginBottom:16}}>
-            <Field icon="pin" value={dests[0]?.city} onChange={e=>upd(0,"city",e.target.value)} placeholder="Where to? Paris, Tokyo, Bali…"/>
+            <CityInput value={dests[0]?.city} onChange={v=>upd(0,"city",v)} placeholder="Destination city — e.g. Paris, Tokyo, Bali"/>
             <Field icon="calendar" value={dests[0]?.dateFrom} onChange={e=>upd(0,"dateFrom",e.target.value)} type="date" placeholder="✈️ Fly out date"/>
             <Field icon="calendar" value={dests[0]?.dateTo} onChange={e=>upd(0,"dateTo",e.target.value)} type="date" placeholder="🏠 Return date"/>
           </div>
@@ -384,7 +479,7 @@ function HeroSearch({ onSearch, loading }) {
 
         {/* Shared row — "Flying from" appears exactly ONCE */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(160px,1fr))",gap:12,marginBottom:18}}>
-          <Field icon="plane" value={from} onChange={e=>setFrom(e.target.value)} placeholder="Flying from (city or airport)"/>
+          <CityInput value={from} onChange={v=>setFrom(v)} placeholder="Departure city — e.g. New York, London"/>
           <Field icon="dollar" value={budget} onChange={e=>setBudget(e.target.value)} placeholder="Total budget ($)" type="number"/>
           <div style={{position:"relative"}}>
             <span style={{position:"absolute",left:14,top:"50%",transform:"translateY(-50%)",pointerEvents:"none",opacity:0.5}}><Icon name="users" size={15} color={c.text}/></span>
@@ -747,12 +842,13 @@ function FlightsTab({ form, settings, apiKey }) {
     setLoading(true); setFlights(null);
     try {
       const raw = await askClaude(
-        `Flight expert. Return ONLY a JSON array of 4 realistic flight options. Each object: {"airline":"string","from":"string","to":"string","depart":"HH:MM","arrive":"HH:MM","duration":"Xh Ym","stops":0,"estimatedPrice":000,"refundable":true,"flightNumber":"string"}. Use real airlines that serve this route. Vary airlines, stops (0 or 1), and prices. No markdown, no explanation.`,
+        `Flight expert. Return ONLY a JSON array of 4 realistic flight options. Each object: {"airline":"string","from":"string","to":"string","depart":"HH:MM","arrive":"HH:MM","duration":"Xh Ym","stops":0,"estimatedPrice":000,"refundable":true,"flightNumber":"string"}. Use real airlines that serve this route. Vary airlines, stops (0 or 1), and prices. No markdown, no explanation. IMPORTANT: Return exactly 4 items. Never return an empty array.`,
         `Flights from ${form.from || "New York"} to ${form.destination}${form.dateFrom ? ` on ${form.dateFrom}` : ""}. ${form.travelers || 2} traveler(s). Travel style: ${form.style || "general"}.`,
-        apiKey, 900
+        apiKey, 1200
       );
       const parsed = parseJSON(raw);
       const data = Array.isArray(parsed) ? parsed : parsed.flights || [];
+      if (!data.length) throw new Error("Empty flights array");
       sSet(ck, data);
       setFlights(data);
     } catch(e) { setFlights({ _error: true }); }
@@ -878,12 +974,13 @@ function HotelsTab({ form, settings, apiKey }) {
     setLoading(true); setHotels(null);
     try {
       const raw = await askClaude(
-        `Hotel expert. Return ONLY a JSON array of 4 hotels. Each: {"name":"string (real hotel name)","stars":4,"neighborhood":"string","description":"string max 15 words","pricePerNight":number,"amenities":["wifi","pool","gym","coffee"] (only include what the hotel realistically has, from this list: wifi pool gym coffee),"refundable":boolean,"rating":8.5}. Use real hotels at this destination. Vary star level and price. No markdown.`,
+        `Hotel expert. Return ONLY a JSON array of 4 hotels. Each: {"name":"string (real hotel name)","stars":4,"neighborhood":"string","description":"string max 15 words","pricePerNight":number,"amenities":["wifi","pool","gym","coffee"] (only include what the hotel realistically has, from this list: wifi pool gym coffee),"refundable":boolean,"rating":8.5}. Use real hotels at this destination. Vary star level and price. No markdown. IMPORTANT: Return exactly 4 items. Never return an empty array.`,
         `Best hotels in ${form.destination} for ${form.travelers || 2} traveler(s) with a $${form.budget || 3000} total budget. Travel style: ${form.style || "general"}${form.dateFrom ? `. Dates: ${form.dateFrom} to ${form.dateTo}` : ""}.`,
-        apiKey, 1000
+        apiKey, 1400
       );
       const parsed = parseJSON(raw);
       const data = Array.isArray(parsed) ? parsed : parsed.hotels || [];
+      if (!data.length) throw new Error("Empty hotels array");
       sSet(ck, data);
       setHotels(data);
     } catch(e) { setHotels({ _error: true }); }
@@ -1003,12 +1100,13 @@ function CarsTab({ form, apiKey }) {
         ? Math.max(1, Math.round((new Date(form.dateTo) - new Date(form.dateFrom)) / 864e5))
         : 5;
       const raw = await askClaude(
-        `Car rental expert. Return ONLY a JSON array of 4 car rental options. Each: {"category":"Economy"|"Compact SUV"|"Midsize"|"Luxury","example":"string (specific popular model)","estimatedDailyRate":number,"features":["string","string"],"recommended":boolean}. Use realistic local pricing for the destination. Mark exactly one as recommended. No markdown.`,
+        `Car rental expert. Return ONLY a JSON array of 4 car rental options. Each: {"category":"Economy"|"Compact SUV"|"Midsize"|"Luxury","example":"string (specific popular model)","estimatedDailyRate":number,"features":["string","string"],"recommended":boolean}. Use realistic local pricing for the destination. Mark exactly one as recommended. No markdown. IMPORTANT: Return exactly 4 items. Never return an empty array.`,
         `Car rentals in ${form.destination} for ${nights} days. Budget: $${form.budget || 3000} total for ${form.travelers || 2} traveler(s). Style: ${form.style || "general"}.`,
         apiKey, 700
       );
       const parsed = parseJSON(raw);
       const data = Array.isArray(parsed) ? parsed : parsed.cars || [];
+      if (!data.length) throw new Error("Empty cars array");
       sSet(ck, data);
       setCars(data);
     } catch(e) { setCars({ _error: true }); }
