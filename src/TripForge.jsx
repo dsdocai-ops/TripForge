@@ -882,17 +882,20 @@ function RestaurantsTab({ form, apiKey }) {
             {r.mustTry&&<div style={{background:c.accentLow,border:`1px solid ${c.accentBorder}`,borderRadius:9,padding:"8px 12px",marginBottom:10}}><span style={{color:c.accent,fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>Must try: </span><span style={{color:c.text,fontSize:13}}>{r.mustTry}</span></div>}
             {r.tip&&<p style={{color:c.textMuted,fontSize:13,margin:"0 0 12px",lineHeight:1.6}}>💡 {r.tip}</p>}
             <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:"auto",paddingTop:10,borderTop:`1px solid ${c.border}`}}>
-              <a href={`https://www.google.com/maps/search/${encodeURIComponent(r.name+" "+cityOnly(form.destination))}`} target="_blank" rel="noopener noreferrer"
+              {/* Maps — queries name + city for a direct place result */}
+              <a href={`https://maps.google.com/?q=${encodeURIComponent(r.name+", "+cityOnly(form.destination))}`} target="_blank" rel="noopener noreferrer"
                 style={{padding:"6px 12px",background:c.bg2,border:`1px solid ${c.border}`,borderRadius:8,color:c.textMuted,textDecoration:"none",fontSize:12,fontWeight:600,fontFamily:fontBody}}>
                 📍 Maps
               </a>
-              <a href={`https://www.opentable.com/s?term=${encodeURIComponent(r.name)}&metroId=&locale=en-US`} target="_blank" rel="noopener noreferrer"
-                style={{padding:"6px 12px",background:c.bg2,border:`1px solid ${c.border}`,borderRadius:8,color:c.textMuted,textDecoration:"none",fontSize:12,fontWeight:600,fontFamily:fontBody}}>
-                🍽️ OpenTable
-              </a>
-              <a href={`https://www.yelp.com/search?find_desc=${encodeURIComponent(r.name)}&find_loc=${encodeURIComponent(cityOnly(form.destination))}`} target="_blank" rel="noopener noreferrer"
+              {/* Yelp — name + city narrows directly to the business */}
+              <a href={`https://www.yelp.com/search?find_desc=${encodeURIComponent('"'+r.name+'"')}&find_loc=${encodeURIComponent(cityOnly(form.destination))}`} target="_blank" rel="noopener noreferrer"
                 style={{padding:"6px 12px",background:c.bg2,border:`1px solid ${c.border}`,borderRadius:8,color:c.textMuted,textDecoration:"none",fontSize:12,fontWeight:600,fontFamily:fontBody}}>
                 ⭐ Yelp
+              </a>
+              {/* TripAdvisor — reliable restaurant search */}
+              <a href={`https://www.tripadvisor.com/Search?q=${encodeURIComponent(r.name+" "+cityOnly(form.destination))}&searchSessionId=restaurant`} target="_blank" rel="noopener noreferrer"
+                style={{padding:"6px 12px",background:c.bg2,border:`1px solid ${c.border}`,borderRadius:8,color:c.textMuted,textDecoration:"none",fontSize:12,fontWeight:600,fontFamily:fontBody}}>
+                🌍 TripAdvisor
               </a>
             </div>
           </div>
@@ -900,7 +903,7 @@ function RestaurantsTab({ form, apiKey }) {
       </div>
       <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:12,padding:16}}>
         <p style={{color:c.textMuted,fontSize:13,margin:0,lineHeight:1.6}}><strong style={{color:c.text}}>Browse all restaurants: </strong>
-          {[{name:"OpenTable",url:`https://www.opentable.com/s?term=${encodeURIComponent(cityOnly(form.destination)||"")}`},{name:"Yelp",url:`https://www.yelp.com/search?find_desc=Restaurants&find_loc=${encodeURIComponent(cityOnly(form.destination)||"")}`},{name:"TripAdvisor",url:`https://www.tripadvisor.com/Search?q=${encodeURIComponent(cityOnly(form.destination||"")+" restaurants")}`}].map((s,i)=><span key={s.name}><a href={s.url} target="_blank" rel="noopener noreferrer" style={{color:c.accentHi,fontWeight:600}}>{s.name}</a>{i<2?" · ":""}</span>)}
+          {[{name:"Yelp",url:`https://www.yelp.com/search?find_desc=Restaurants&find_loc=${encodeURIComponent(cityOnly(form.destination)||"")}`},{name:"TripAdvisor",url:`https://www.tripadvisor.com/Restaurants-${encodeURIComponent(cityOnly(form.destination||""))}`},{name:"Google Maps",url:`https://maps.google.com/?q=restaurants+in+${encodeURIComponent(cityOnly(form.destination)||"")}`}].map((s,i)=><span key={s.name}><a href={s.url} target="_blank" rel="noopener noreferrer" style={{color:c.accentHi,fontWeight:600}}>{s.name}</a>{i<2?" · ":""}</span>)}
         </p>
       </div>
     </div>
@@ -1029,18 +1032,10 @@ function FlightsTab({ form, settings, apiKey }) {
                 <div style={{color:c.accent,fontWeight:900,fontSize:26,letterSpacing:"-0.03em"}}>~${f.estimatedPrice}</div>
                 <div style={{color:c.textMuted,fontSize:11,margin:"2px 0 4px",fontStyle:"italic"}}>est. per person</div>
                 <div style={{color:f.refundable?c.success:c.danger,fontSize:12,fontWeight:700,margin:"2px 0 12px"}}>{f.refundable?"✓ Refundable":"Non-refundable"}</div>
-                <div style={{display:"flex",flexDirection:"column",gap:7,alignItems:"flex-end"}}>
-                  {[
-                    {name:"Skyscanner",  url:AFF.skyscanner(f.from||fromCity, f.to||destCity, form.dateFrom, form.dateTo, form.travelers), primary:true},
-                    {name:"Google Flights", url:AFF.googleFlights(f.from||fromCity, f.to||destCity, form.dateFrom)},
-                    {name:"Expedia",     url:AFF.expediaFlights(f.from||fromCity, f.to||destCity, form.dateFrom, form.travelers)},
-                  ].map(s=>(
-                    <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
-                      style={{display:"inline-block",padding:"8px 16px",background:s.primary?`linear-gradient(135deg,${c.accent},${c.accentHi})`:c.bg2,border:`1.5px solid ${s.primary?c.accentBorder:c.border}`,borderRadius:9,color:s.primary?"#fff":c.textMuted,textDecoration:"none",fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>
-                      {s.name} →
-                    </a>
-                  ))}
-                </div>
+                <a href={AFF.googleFlights(f.from||fromCity, f.to||destCity, form.dateFrom)} target="_blank" rel="noopener noreferrer"
+                  style={{display:"inline-block",padding:"10px 22px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800,boxShadow:`0 6px 20px ${c.accentBorder}`,whiteSpace:"nowrap"}}>
+                  Search on Google Flights →
+                </a>
               </div>
             </div>
           </div>
@@ -1158,18 +1153,12 @@ function HotelsTab({ form, settings, apiKey }) {
                   </span>
                 ))}
               </div>
-              <span style={{fontSize:12,fontWeight:700,color:h.refundable?c.success:c.danger,display:"block",marginBottom:10}}>{h.refundable?"Free cancellation":"Non-refundable"}</span>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                {[
-                  {name:"Booking.com", url:`https://www.booking.com/search.html?ss=${encodeURIComponent(h.name+" "+cityOnly(form.destination))}&checkin=${form.dateFrom||""}&checkout=${form.dateTo||""}&group_adults=${form.travelers||2}&no_rooms=1&aid=YOURAFFID`, primary:true},
-                  {name:"Expedia",     url:AFF.expediaHotels(h.name+" "+cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers)},
-                  {name:"Hotels.com",  url:`https://www.hotels.com/search.do?q-destination=${encodeURIComponent(h.name+" "+cityOnly(form.destination))}&q-check-in=${form.dateFrom||""}&q-check-out=${form.dateTo||""}&q-rooms=1&q-room-0-adults=${form.travelers||2}`},
-                ].map(s=>(
-                  <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
-                    style={{flex:1,textAlign:"center",padding:"9px 10px",background:s.primary?`linear-gradient(135deg,${c.accent},${c.accentHi})`:c.bg2,border:`1.5px solid ${s.primary?c.accentBorder:c.border}`,borderRadius:9,color:s.primary?"#fff":c.textMuted,textDecoration:"none",fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>
-                    {s.name}
-                  </a>
-                ))}
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontSize:12,fontWeight:700,color:h.refundable?c.success:c.danger}}>{h.refundable?"Free cancellation":"Non-refundable"}</span>
+                <a href={`https://www.booking.com/search.html?ss=${encodeURIComponent(h.name+" "+cityOnly(form.destination))}&checkin=${form.dateFrom||""}&checkout=${form.dateTo||""}&group_adults=${form.travelers||2}&no_rooms=1&aid=YOURAFFID`} target="_blank" rel="noopener noreferrer"
+                  style={{padding:"9px 18px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:13,fontWeight:800,whiteSpace:"nowrap"}}>
+                  Book on Booking.com →
+                </a>
               </div>
             </div>
           </div>
@@ -1278,19 +1267,11 @@ function CarsTab({ form, apiKey }) {
                   {car.features.map(f => <span key={f} style={{background:c.bg2,border:`1px solid ${c.border}`,borderRadius:999,padding:"3px 9px",fontSize:11,color:c.textMuted}}>{f}</span>)}
                 </div>
               )}
-              <div style={{color:c.accent,fontWeight:900,fontSize:22,marginBottom:12}}>~${car.estimatedDailyRate}<span style={{color:c.textMuted,fontSize:12,fontWeight:500}}>/day</span></div>
-              <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                {[
-                  {name:"Kayak",        url:AFF.kayakCars(cityOnly(form.destination), form.dateFrom, form.dateTo), primary:true},
-                  {name:"Expedia",      url:`https://www.expedia.com/Cars/search?locn=${encodeURIComponent(cityOnly(form.destination)||"")}&startDate=${form.dateFrom||""}&endDate=${form.dateTo||""}`},
-                  {name:"RentalCars",   url:`https://www.rentalcars.com/SearchResults.do?affiliateCode=YOURAFFID&location=${encodeURIComponent(cityOnly(form.destination)||"")}&d1=${form.dateFrom||""}&d2=${form.dateTo||""}`},
-                ].map(s=>(
-                  <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
-                    style={{flex:1,textAlign:"center",padding:"9px 8px",background:s.primary?`linear-gradient(135deg,${c.accent},${c.accentHi})`:c.bg2,border:`1.5px solid ${s.primary?c.accentBorder:c.border}`,borderRadius:9,color:s.primary?"#fff":c.textMuted,textDecoration:"none",fontSize:12,fontWeight:700,whiteSpace:"nowrap"}}>
-                    {s.name}
-                  </a>
-                ))}
-              </div>
+              <div style={{color:c.accent,fontWeight:900,fontSize:22,marginBottom:14}}>~${car.estimatedDailyRate}<span style={{color:c.textMuted,fontSize:12,fontWeight:500}}>/day</span></div>
+              <a href={AFF.kayakCars(cityOnly(form.destination), form.dateFrom, form.dateTo)} target="_blank" rel="noopener noreferrer"
+                style={{display:"block",textAlign:"center",padding:"11px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800,whiteSpace:"nowrap"}}>
+                Compare on Kayak →
+              </a>
             </div>
           </div>
         ))}
@@ -1300,53 +1281,94 @@ function CarsTab({ form, apiKey }) {
 }
 
 // ─── Weather Tab ──────────────────────────────────────────────────────────────
-function WeatherTab({ form }) {
+function WeatherTab({ form, settings={} }) {
   const { c, font, fontBody } = useTokens();
   const [wx, setWx] = useState(null);
   const [loading, setLoading] = useState(false);
+  const isFahrenheit = (settings.units||"Fahrenheit") === "Fahrenheit";
+  const tempUnit  = isFahrenheit ? "°F" : "°C";
+  const speedUnit = isFahrenheit ? "mph" : "km/h";
+  const precipUnit = isFahrenheit ? "in" : "mm";
 
   async function fetchWeatherData() {
     if (!form.destination) return;
     setLoading(true);
     try {
-      const geo=await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityOnly(form.destination))}&count=1`).then(r=>r.json());
-      if (!geo.results?.length){setWx({error:"We couldn't find weather data for that destination. Please check the spelling and try again."});setLoading(false);return;}
-      const {latitude,longitude,name,country}=geo.results[0];
-      const df=form.dateFrom||new Date().toISOString().split("T")[0];
-      const dt=form.dateTo||new Date(Date.now()+14*864e5).toISOString().split("T")[0];
-      const w=await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,weathercode&timezone=auto&start_date=${df}&end_date=${dt}`).then(r=>r.json());
-      setWx({name,country,daily:w.daily});
-    } catch(e){setWx({error:'unavailable'});}
+      const geo = await fetch(`https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cityOnly(form.destination))}&count=1`).then(r=>r.json());
+      if (!geo.results?.length) { setWx({error:true}); setLoading(false); return; }
+      const {latitude,longitude,name,country} = geo.results[0];
+      const df = form.dateFrom || new Date().toISOString().split("T")[0];
+      const dt = form.dateTo   || new Date(Date.now()+14*864e5).toISOString().split("T")[0];
+      const tUnit = isFahrenheit ? "fahrenheit" : "celsius";
+      const wUnit = isFahrenheit ? "mph" : "kmh";
+      const w = await fetch(
+        `https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}` +
+        `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,windspeed_10m_max,weathercode` +
+        `&temperature_unit=${tUnit}&wind_speed_unit=${wUnit}&precipitation_unit=${isFahrenheit?"inch":"mm"}` +
+        `&timezone=auto&start_date=${df}&end_date=${dt}`
+      ).then(r=>r.json());
+      setWx({name, country, daily:w.daily});
+    } catch(e) { setWx({error:true}); }
     setLoading(false);
   }
 
-  useEffect(()=>{if(form.destination)fetchWeatherData();},[form.destination]);
+  useEffect(()=>{ if(form.destination) fetchWeatherData(); },[form.destination, settings.units]);
 
-  const wi=(code)=>code===0?"☀️":code<=3?"🌤️":code<=48?"☁️":code<=67?"🌧️":"⛈️";
+  const wi = code => code===0?"☀️":code<=3?"🌤️":code<=48?"☁️":code<=67?"🌧️":code<=77?"🌨️":"⛈️";
+  const wDesc = code => code===0?"Clear":code<=3?"Partly cloudy":code<=48?"Overcast":code<=67?"Rain":code<=77?"Snow":"Thunderstorm";
 
   if (!form.destination) return <div style={{textAlign:"center",padding:"72px 20px"}}><div style={{fontSize:64,marginBottom:16}}>🌤️</div><p style={{color:c.textMuted,fontSize:15}}>Enter a destination to see the forecast</p></div>;
-  if (loading) return <div style={{display:"flex",flexDirection:"column",gap:10}}>{[...Array(7)].map((_,i)=><Skeleton key={i} h="60px" r="12px"/>)}</div>;
+  if (loading) return <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))",gap:12}}>{[...Array(7)].map((_,i)=><Skeleton key={i} h="170px" r="14px"/>)}</div>;
   if (wx?.error) return (
     <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:20,padding:"40px 24px",textAlign:"center"}}>
       <div style={{fontSize:48,marginBottom:14}}>🌤️</div>
       <div style={{color:c.text,fontWeight:700,fontSize:18,marginBottom:8}}>Weather data temporarily unavailable</div>
-      <p style={{color:c.textMuted,fontSize:14,lineHeight:1.6,maxWidth:380,margin:"0 auto 20px"}}>We couldn't retrieve the forecast for this destination right now. Please check the destination name and try again.</p>
+      <p style={{color:c.textMuted,fontSize:14,lineHeight:1.6,maxWidth:380,margin:"0 auto 20px"}}>We couldn't retrieve the forecast. Please check the destination and try again.</p>
       <Btn onClick={fetchWeatherData} variant="ghost" style={{fontSize:13}}>Try again</Btn>
     </div>
   );
   if (!wx) return null;
 
+  const d = wx.daily;
   return (
     <div>
-      <h2 style={{color:c.text,fontSize:22,fontWeight:800,margin:"0 0 20px",letterSpacing:"-0.03em"}}>{wx.name}, {wx.country}</h2>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:12}}>
-        {wx.daily?.time?.map((date,i)=>(
-          <div key={date} style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:14,padding:"14px 10px",textAlign:"center"}}>
-            <div style={{color:c.textMuted,fontSize:11,fontWeight:600,marginBottom:6}}>{new Date(date+"T12:00:00").toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"})}</div>
-            <div style={{fontSize:28,margin:"8px 0"}}>{wi(wx.daily.weathercode[i])}</div>
-            <div style={{color:c.text,fontWeight:800,fontSize:16}}>{Math.round(wx.daily.temperature_2m_max[i])}°</div>
-            <div style={{color:c.textMuted,fontSize:13}}>{Math.round(wx.daily.temperature_2m_min[i])}°</div>
-            {wx.daily.precipitation_sum[i]>0&&<div style={{color:c.info,fontSize:11,marginTop:4,fontWeight:600}}>{wx.daily.precipitation_sum[i]}mm</div>}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:20,flexWrap:"wrap",gap:10}}>
+        <h2 style={{color:c.text,fontSize:22,fontWeight:800,margin:0,letterSpacing:"-0.03em"}}>{wx.name}, {wx.country}</h2>
+        <span style={{fontSize:12,color:c.textMuted,fontWeight:600}}>Forecast · {tempUnit} · {speedUnit}</span>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))",gap:12}}>
+        {d?.time?.map((date,i)=>(
+          <div key={date} style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:14,padding:"14px 12px",textAlign:"center",display:"flex",flexDirection:"column",gap:4}}>
+            {/* Date */}
+            <div style={{color:c.textMuted,fontSize:11,fontWeight:700,letterSpacing:"0.04em"}}>
+              {new Date(date+"T12:00:00").toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"})}
+            </div>
+            {/* Icon + condition */}
+            <div style={{fontSize:30,margin:"6px 0 2px"}}>{wi(d.weathercode[i])}</div>
+            <div style={{color:c.textSubtle,fontSize:10,fontWeight:600,marginBottom:4}}>{wDesc(d.weathercode[i])}</div>
+            {/* High / Low */}
+            <div style={{display:"flex",justifyContent:"center",alignItems:"baseline",gap:6}}>
+              <span style={{color:c.text,fontWeight:900,fontSize:17}}>{Math.round(d.temperature_2m_max[i])}{tempUnit}</span>
+              <span style={{color:c.textMuted,fontSize:13}}>{Math.round(d.temperature_2m_min[i])}{tempUnit}</span>
+            </div>
+            {/* Wind */}
+            {d.windspeed_10m_max?.[i]!=null && (
+              <div style={{color:c.textMuted,fontSize:11,fontWeight:600}}>
+                💨 {Math.round(d.windspeed_10m_max[i])} {speedUnit}
+              </div>
+            )}
+            {/* Rain chance */}
+            {d.precipitation_probability_max?.[i]!=null && (
+              <div style={{color:d.precipitation_probability_max[i]>50?c.info:c.textSubtle,fontSize:11,fontWeight:700}}>
+                🌧 {d.precipitation_probability_max[i]}%
+              </div>
+            )}
+            {/* Precipitation amount */}
+            {d.precipitation_sum?.[i]>0 && (
+              <div style={{color:c.info,fontSize:10,fontWeight:600}}>
+                {isFahrenheit ? d.precipitation_sum[i].toFixed(2) : Math.round(d.precipitation_sum[i]*10)/10} {precipUnit}
+              </div>
+            )}
           </div>
         ))}
       </div>
@@ -1746,7 +1768,7 @@ export default function TripForge() {
           {tab==="flights"     && <FlightsTab     form={form} settings={ds} apiKey={apiKey}/>}
           {tab==="hotels"      && <HotelsTab      form={form} settings={ds} apiKey={apiKey}/>}
           {tab==="cars"        && <CarsTab        form={form} apiKey={apiKey}/>}
-          {tab==="weather"     && <WeatherTab     form={form}/>}
+          {tab==="weather"     && <WeatherTab     form={form} settings={ds}/>}
         </main>
 
         <footer style={{borderTop:`1px solid ${c.border}`,padding:"28px 20px",maxWidth:1160,margin:"0 auto"}}>
