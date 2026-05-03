@@ -20,6 +20,10 @@ const AFF = {
     const seg = d1 ? (d2 ? `${d1}/${d2}` : d1) : "any";
     return `https://www.skyscanner.com/transport/flights/${slugify(from)||"anywhere"}/${slugify(to)||"anywhere"}/${seg}/?adults=${travelers}&utm_source=YOURAFFID`;
   },
+  kayakFlightsIATA: (fromIATA, toIATA, date="", travelers=1) =>
+    `https://www.kayak.com/flights/${(fromIATA||"").toUpperCase()}-${(toIATA||"").toUpperCase()}${date?"/"+date:""}?adults=${travelers}&sort=price_a`,
+  trivago: (hotelName, dest, checkin="", checkout="", travelers=1) =>
+    `https://www.trivago.com/?iPathLinkType=2&aDateRange[arr]=${checkin}&aDateRange[dep]=${checkout}&aNominalAdults=${travelers}&sQuery=${encodeURIComponent(((hotelName||"")+" "+(dest||"")).trim())}`,
   bookingHotels: (dest, checkin="", checkout="", travelers=1) =>
     `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(dest||"")}&checkin=${checkin}&checkout=${checkout}&group_adults=${travelers}&no_rooms=1&aid=YOURAFFID`,
   expediaHotels: (dest, checkin="", checkout="", travelers=1) =>
@@ -1020,7 +1024,11 @@ function FlightsTab({ form, settings, apiKey }) {
         {filtered.map((f, i) => {
           const isBestDeal = i === 0;
           const isNonstopBonus = i === 1 && f.stops === 0 && filtered[0].stops > 0;
-          const bookUrl = AFF.skyscanner(f.iataFrom||f.from||fromCity, f.iataTo||f.to||destCity, form.dateFrom, form.dateTo, form.travelers);
+          const hasIATA = f.iataFrom && f.iataTo;
+          const bookUrl = hasIATA
+            ? AFF.kayakFlightsIATA(f.iataFrom, f.iataTo, form.dateFrom, form.travelers)
+            : AFF.skyscanner(f.from||fromCity, f.to||destCity, form.dateFrom, form.dateTo, form.travelers);
+          const bookSite = hasIATA ? "Kayak" : "Skyscanner";
           return (
             <div key={i} style={{background:c.surface,border:`1.5px solid ${isBestDeal?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden",position:"relative"}}>
               {isBestDeal && <div style={{position:"absolute",top:14,right:14,zIndex:3,background:c.accent,color:"#fff",fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:20,letterSpacing:"0.08em"}}>BEST DEAL</div>}
@@ -1058,7 +1066,7 @@ function FlightsTab({ form, settings, apiKey }) {
                     style={{display:"inline-flex",alignItems:"center",gap:8,padding:"11px 22px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800,boxShadow:`0 6px 20px ${c.accentBorder}`,whiteSpace:"nowrap"}}>
                     Book Now →
                   </a>
-                  <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"right"}}>via Skyscanner</div>
+                  <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"right"}}>via {bookSite} · compares all airlines</div>
                 </div>
               </div>
             </div>
@@ -1158,7 +1166,7 @@ function HotelsTab({ form, settings, apiKey }) {
           const isBestDeal = i === 0;
           const bestRatedIdx = filtered.reduce((bi, hh, ii) => (hh.rating||0) > (filtered[bi].rating||0) ? ii : bi, 0);
           const isTopRated = i === bestRatedIdx && !isBestDeal;
-          const bookUrl = `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(h.name+" "+cityOnly(form.destination))}&checkin=${form.dateFrom||""}&checkout=${form.dateTo||""}&group_adults=${form.travelers||2}&no_rooms=1&aid=YOURAFFID`;
+          const bookUrl = AFF.trivago(h.name, cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers||2);
           return (
             <div key={i} style={{background:c.surface,border:`1.5px solid ${isBestDeal?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden"}}>
               {isBestDeal && <div style={{background:c.accent,padding:"7px 18px",fontSize:10,fontWeight:800,color:"#fff",letterSpacing:"0.1em",textAlign:"center"}}>★ BEST DEAL</div>}
@@ -1192,7 +1200,7 @@ function HotelsTab({ form, settings, apiKey }) {
                   style={{display:"block",textAlign:"center",padding:"11px 14px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800}}>
                   Book Now →
                 </a>
-                <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"center"}}>via Booking.com</div>
+                <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"center"}}>via Trivago · compares 400+ booking sites</div>
               </div>
             </div>
           );
