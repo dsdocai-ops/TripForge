@@ -20,12 +20,21 @@ const AFF = {
     const seg = d1 ? (d2 ? `${d1}/${d2}` : d1) : "any";
     return `https://www.skyscanner.com/transport/flights/${slugify(from)||"anywhere"}/${slugify(to)||"anywhere"}/${seg}/?adults=${travelers}&utm_source=YOURAFFID`;
   },
-  kayakFlightsIATA: (fromIATA, toIATA, date="", travelers=1) =>
-    `https://www.kayak.com/flights/${(fromIATA||"").toUpperCase()}-${(toIATA||"").toUpperCase()}${date?"/"+date:""}?adults=${travelers}&sort=price_a`,
+  kayakFlightsIATA: (fromIATA, toIATA, date="", travelers=1, cabin="", airlineCode="") => {
+    // Kayak cabin slug: e→economy, pe→premiumeconomy, b→business, f→first
+    const CABIN_MAP = { e:"economy", pe:"premiumeconomy", b:"business", f:"first" };
+    const cabinSlug = CABIN_MAP[cabin] || (cabin && !CABIN_MAP[cabin] ? cabin : "");
+    let url = `https://www.kayak.com/flights/${(fromIATA||"").toUpperCase()}-${(toIATA||"").toUpperCase()}${date?"/"+date:""}?adults=${travelers}&sort=price_a`;
+    if (cabinSlug) url += `&cabin=${cabinSlug}`;
+    if (airlineCode) url += `&fs=airlines=${airlineCode.toUpperCase()}`;
+    return url;
+  },
   trivago: (hotelName, dest, checkin="", checkout="", travelers=1) =>
     `https://www.trivago.com/?iPathLinkType=2&aDateRange[arr]=${checkin}&aDateRange[dep]=${checkout}&aNominalAdults=${travelers}&sQuery=${encodeURIComponent(((hotelName||"")+" "+(dest||"")).trim())}`,
-  bookingHotels: (dest, checkin="", checkout="", travelers=1) =>
-    `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(dest||"")}&checkin=${checkin}&checkout=${checkout}&group_adults=${travelers}&no_rooms=1&aid=YOURAFFID`,
+  bookingHotels: (dest, checkin="", checkout="", travelers=1, hotelName="") => {
+    const q = hotelName ? `${hotelName} ${dest}` : (dest || "");
+    return `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(q)}&checkin=${checkin}&checkout=${checkout}&group_adults=${travelers}&no_rooms=1&aid=YOURAFFID`;
+  },
   expediaHotels: (dest, checkin="", checkout="", travelers=1) =>
     `https://www.expedia.com/Hotel-Search?destination=${encodeURIComponent(dest||"")}&startDate=${checkin}&endDate=${checkout}&adults=${travelers}&affcid=YOURAFFID`,
   hotelscom: (dest, checkin="", checkout="", travelers=1) =>
@@ -966,7 +975,7 @@ function FlightsTab({ form, settings, apiKey }) {
       // 2. Fall back to Claude AI estimates
       if (!apiKey) throw new Error("no key");
       const raw = await askClaude(
-        `Flight data expert. Return ONLY a JSON array of 4 flight options. Strict rules: (1) Only airlines that genuinely operate this exact route. (2) iataFrom/iataTo must be the correct primary IATA airport codes. (3) estimatedPrice = realistic economy fare per person one-way at current market rates — domestic US $120-450, transatlantic $380-950, intra-Europe $45-280, Asia-Pacific $280-850, adjust for season and route popularity. (4) Include both nonstop and 1-stop options where realistic. (5) flightNumber uses real airline IATA prefix + plausible number. (6) duration must be accurate for the route including layover if stops>0. (7) from/to fields are the city names. Each object: {"airline":"string","from":"string","to":"string","iataFrom":"XXX","iataTo":"YYY","depart":"HH:MM","arrive":"HH:MM","duration":"Xh Ym","stops":0,"estimatedPrice":000,"refundable":true,"flightNumber":"XX 000","bookingClass":"Economy"}. No markdown. Return exactly 4 items.`,
+        `Flight data expert. Return ONLY a JSON array of 4 flight options. Strict rules: (1) Only airlines that genuinely operate this exact route. (2) iataFrom/iataTo: correct primary IATA airport codes. (3) airlineCode: the airline's official 2-letter IATA carrier code (e.g. "AA" for American, "BA" for British Airways, "LH" for Lufthansa, "DL" for Delta, "UA" for United, "AF" for Air France, "EK" for Emirates, "QR" for Qatar, "SQ" for Singapore, "FR" for Ryanair, "U2" for easyJet — use the real code). (4) estimatedPrice = realistic economy fare per person ONE-WAY: domestic US/Canada $100-380 (short-haul $100-200, coast-to-coast $180-380); intra-Europe $40-260 (budget $40-130, full-service $90-260); transatlantic US↔Europe $350-1050 (+30% peak summer/holiday); US/Europe↔Asia $420-1100; intra-Asia $60-380; US/Europe↔Latin America $200-650; US/Europe↔Middle East/Africa $450-1200; Oceania long-haul $600-1400. +25-40% peak season. (5) Include nonstop and 1-stop where airlines actually fly them. (6) flightNumber: real IATA prefix + plausible number. (7) duration accurate for the route. Each: {"airline":"string","airlineCode":"XX","from":"string","to":"string","iataFrom":"XXX","iataTo":"YYY","depart":"HH:MM","arrive":"HH:MM","duration":"Xh Ym","stops":0,"estimatedPrice":000,"refundable":true,"flightNumber":"XX 000","bookingClass":"Economy"}. No markdown. Exactly 4 items.`,
         `Flights from ${form.from || "New York"} to ${form.destination}${form.dateFrom ? ` on ${form.dateFrom}` : ""}. ${form.travelers || 2} traveler(s). Travel style: ${form.style || "general"}. Budget consideration: $${form.budget || 3000} total trip.`,
         apiKey, 1200
       );
@@ -1097,7 +1106,7 @@ function FlightsTab({ form, settings, apiKey }) {
             const isNonstopBonus = i === 1 && f.stops === 0 && filtered[0].stops > 0;
             const hasIATA = f.iataFrom && f.iataTo;
             const bookUrl = hasIATA
-              ? AFF.kayakFlightsIATA(f.iataFrom, f.iataTo, form.dateFrom, form.travelers)
+              ? AFF.kayakFlightsIATA(f.iataFrom, f.iataTo, form.dateFrom, form.travelers, "e", f.airlineCode||"")
               : AFF.skyscanner(f.from||fromCity, f.to||destCity, form.dateFrom, form.dateTo, form.travelers);
             const bookSite = hasIATA ? "Kayak" : "Skyscanner";
             return (
@@ -1155,17 +1164,44 @@ function HotelsTab({ form, settings, apiKey }) {
   const { c, fontBody } = useTokens();
   const [hotels, setHotels] = useState(null);
   const [loading, setLoading] = useState(false);
+  const proxyBase = import.meta.env.VITE_PROXY_URL || "";
 
   async function fetchHotels() {
-    if (!form.destination || !apiKey) return;
-    const ck = sCacheKey("hotels", form.destination, form.style);
+    if (!form.destination) return;
+    const travelMonth = form.dateFrom?.slice(0, 7) || "";
+    const ck = sCacheKey("hotels", form.destination, form.style, travelMonth);
     const hit = sGet(ck);
     if (hit) { setHotels(hit); return; }
     setLoading(true); setHotels(null);
     try {
+      // 1. Try Hotellook live prices (requires dates)
+      if (proxyBase && form.dateFrom && form.dateTo) {
+        const liveRes = await fetch(proxyBase.replace("/claude", "/hotels"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            destination: cityOnly(form.destination),
+            checkin: form.dateFrom,
+            checkout: form.dateTo,
+            adults: form.travelers || 2,
+          }),
+        }).catch(() => null);
+        if (liveRes?.ok) {
+          const liveData = await liveRes.json().catch(() => null);
+          if (liveData?.live && liveData.hotels?.length) {
+            sSet(ck, liveData);
+            setHotels(liveData);
+            setLoading(false);
+            return;
+          }
+        }
+      }
+      // 2. Fall back to Claude AI estimates
+      if (!apiKey) throw new Error("no key");
+      const monthName = form.dateFrom ? new Date(form.dateFrom + "T12:00:00").toLocaleString("default", { month: "long" }) : "the travel period";
       const raw = await askClaude(
-        `Hotel data expert. Return ONLY a JSON array of 4 real hotels. Strict rules: (1) Only real, currently-operating hotels at this exact destination — use the actual hotel brand name. (2) pricePerNight: current market nightly rate in USD — budget cities $50-120, mid-range cities $100-220, expensive cities $180-400, luxury tier $350-700. (3) rating: the hotel's actual known score on a 10-point scale (be accurate to the real property). (4) stars: the property's real star classification. (5) neighborhood: the actual district/area name. (6) amenities: only list what this specific hotel realistically offers from [wifi, pool, gym, coffee]. (7) Include variety: one budget, two mid-range, one upscale. Each: {"name":"string","stars":number,"neighborhood":"string","description":"string max 18 words","pricePerNight":number,"amenities":["wifi"],"refundable":boolean,"rating":number}. No markdown. Return exactly 4 items.`,
-        `Best hotels in ${form.destination} for ${form.travelers || 2} traveler(s) with a $${form.budget || 3000} total trip budget. Travel style: ${form.style || "general"}${form.dateFrom ? `. Dates: ${form.dateFrom} to ${form.dateTo}` : ""}.`,
+        `Hotel data expert. Return ONLY a JSON array of 4 real hotels. Strict rules: (1) Only real, currently-operating hotels — use the actual brand name. (2) pricePerNight: accurate USD nightly rate for this specific city in ${monthName}. Use destination-aware tiers: ultra-expensive cities (Zurich, London, NYC, SF, Dubai, Singapore, Paris peak): budget $130-200, mid $220-380, upscale $420-800; expensive cities (Tokyo, Sydney, Amsterdam, Miami, Chicago, LA, Vienna, Copenhagen): budget $90-150, mid $160-300, upscale $320-600; mid-tier cities (Barcelona, Rome, Lisbon, Prague, Bangkok peak, Seoul, Montreal, Berlin): budget $60-110, mid $120-220, upscale $240-450; affordable cities (Budapest, Krakow, Bangkok off-peak, Ho Chi Minh, Mexico City, Bali, Cairo): budget $30-70, mid $70-140, upscale $150-300. Apply seasonal premium: summer/holidays/peak season +25-40%; shoulder season ±0%; off-peak -15-25%. (3) rating: actual known score 0-10 for this property. (4) stars: real classification. (5) neighborhood: actual district name. (6) amenities: only what this hotel realistically has from [wifi, pool, gym, coffee]. (7) Variety: one budget, two mid-range, one upscale. Each: {"name":"string","stars":number,"neighborhood":"string","description":"string max 18 words","pricePerNight":number,"amenities":["wifi"],"refundable":boolean,"rating":number}. No markdown. Exactly 4 items.`,
+        `Best hotels in ${form.destination} for ${form.travelers || 2} traveler(s), $${form.budget || 3000} total budget, style: ${form.style || "general"}${form.dateFrom ? `. Travel dates: ${form.dateFrom} to ${form.dateTo} (${monthName})` : ""}.`,
         apiKey, 1400
       );
       const parsed = parseJSON(raw);
@@ -1177,13 +1213,18 @@ function HotelsTab({ form, settings, apiKey }) {
     setLoading(false);
   }
 
-  useEffect(() => { if (form.destination && apiKey) fetchHotels(); }, [form.destination]);
+  useEffect(() => { if (form.destination) fetchHotels(); }, [form.destination]);
 
-  const filtered = Array.isArray(hotels)
-    ? [...hotels]
-        .filter(h => !settings.refundableOnly || h.refundable)
-        .sort((a, b) => (a.pricePerNight||999) - (b.pricePerNight||999))
-    : [];
+  const isLiveHotels = hotels?.live === true;
+  const hotelNights = (isLiveHotels ? hotels.nights : null) || (form.dateFrom && form.dateTo
+    ? Math.max(1, Math.round((new Date(form.dateTo) - new Date(form.dateFrom)) / 864e5))
+    : null);
+
+  // live data: hotels.hotels array; AI data: hotels array directly
+  const hotelList = isLiveHotels ? hotels.hotels : (Array.isArray(hotels) ? hotels : []);
+  const filtered = [...hotelList]
+    .filter(h => !settings.refundableOnly || h.refundable !== false)
+    .sort((a, b) => (a.pricePerNight||999) - (b.pricePerNight||999));
 
   if (!form.destination) return (
     <div style={{textAlign:"center",padding:"72px 20px"}}>
@@ -1213,6 +1254,19 @@ function HotelsTab({ form, settings, apiKey }) {
         </Btn>
       </div>
 
+      {isLiveHotels && (
+        <div style={{background:c.accentLow,border:`1.5px solid ${c.accentBorder}`,borderRadius:10,padding:"10px 16px",marginBottom:18,display:"flex",gap:10,alignItems:"center"}}>
+          <span style={{fontSize:16}}>🟢</span>
+          <p style={{color:c.accentHi,fontSize:13,margin:0,fontWeight:700}}>Live prices via Hotellook / Travelpayouts — real rates for your dates · updated {Math.round((Date.now()-(hotels.fetchedAt||Date.now()))/60000)||"just"} min ago</p>
+        </div>
+      )}
+      {!isLiveHotels && !loading && !hotels?._error && hotelList.length > 0 && (
+        <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:10,padding:"12px 16px",marginBottom:18,display:"flex",gap:10}}>
+          <Icon name="info" size={16} color={c.info}/>
+          <p style={{color:c.textMuted,fontSize:13,margin:0,lineHeight:1.6}}>AI-estimated prices for {form.destination}{form.dateFrom ? "" : " — add travel dates for live pricing"}. Click <strong>Book Now</strong> for real-time rates on Booking.com.</p>
+        </div>
+      )}
+
       {loading && (
         <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:16}}>
           {[1,2,3,4].map(i => <Skeleton key={i} h="340px" r="18px"/>)}
@@ -1228,18 +1282,22 @@ function HotelsTab({ form, settings, apiKey }) {
         </div>
       )}
 
-      {!loading && Array.isArray(hotels) && filtered.length === 0 && hotels.length > 0 && (
+      {!loading && filtered.length === 0 && hotelList.length > 0 && (
         <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:14,padding:"20px 24px",textAlign:"center"}}>
-          <p style={{color:c.textMuted,fontSize:14,margin:0}}>No hotels match your current filters. Try adjusting the refundable setting.</p>
+          <p style={{color:c.textMuted,fontSize:14,margin:0}}>No hotels match your current filters.</p>
         </div>
       )}
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:16}}>
         {filtered.map((h, i) => {
           const isBestDeal = i === 0;
-          const bestRatedIdx = filtered.reduce((bi, hh, ii) => (hh.rating||0) > (filtered[bi].rating||0) ? ii : bi, 0);
-          const isTopRated = i === bestRatedIdx && !isBestDeal;
-          const bookUrl = `https://www.google.com/travel/hotels?q=${encodeURIComponent(h.name+" "+cityOnly(form.destination))}&checkin=${form.dateFrom||""}&checkout=${form.dateTo||""}&adults=${form.travelers||2}`;
+          const bestRatedIdx = !isLiveHotels
+            ? filtered.reduce((bi, hh, ii) => (hh.rating||0) > (filtered[bi].rating||0) ? ii : bi, 0)
+            : -1;
+          const isTopRated = !isLiveHotels && i === bestRatedIdx && !isBestDeal;
+          const bookUrl = AFF.bookingHotels(cityOnly(form.destination), form.dateFrom||"", form.dateTo||"", form.travelers||2, h.name);
+          const priceLabel = isLiveHotels ? `$${h.pricePerNight}` : `~$${h.pricePerNight}`;
+          const totalLabel = hotelNights ? (isLiveHotels ? `$${h.priceTotal || h.pricePerNight * hotelNights} total` : `~$${h.pricePerNight * hotelNights} total`) : null;
           return (
             <div key={i} style={{background:c.surface,border:`1.5px solid ${isBestDeal?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden"}}>
               {isBestDeal && <div style={{background:c.accent,padding:"7px 18px",fontSize:10,fontWeight:800,color:"#fff",letterSpacing:"0.1em",textAlign:"center"}}>★ BEST DEAL</div>}
@@ -1249,31 +1307,45 @@ function HotelsTab({ form, settings, apiKey }) {
                 <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(0,0,0,0.72) 0%,transparent 55%)",pointerEvents:"none"}}/>
                 <div style={{position:"absolute",bottom:14,left:16,right:16}}>
                   <div style={{color:"#fff",fontWeight:800,fontSize:17,textShadow:"0 1px 4px rgba(0,0,0,0.5)"}}>{h.name}</div>
-                  <div style={{color:"rgba(255,255,255,0.8)",fontSize:12}}>{"★".repeat(Math.min(5,Math.max(1,h.stars||4)))} {h.stars||4}-star · {h.neighborhood}</div>
+                  <div style={{color:"rgba(255,255,255,0.8)",fontSize:12}}>{"★".repeat(Math.min(5,Math.max(1,h.stars||3)))} {h.stars||3}-star · {h.neighborhood}</div>
                 </div>
               </div>
               <div style={{padding:18}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8}}>
-                    <span style={{background:"rgba(34,211,160,0.15)",color:c.success,padding:"4px 10px",borderRadius:8,fontSize:13,fontWeight:800}}>{h.rating||"—"}</span>
-                    <span style={{color:c.textMuted,fontSize:12}}>/10</span>
+                  {!isLiveHotels && h.rating ? (
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{background:"rgba(34,211,160,0.15)",color:c.success,padding:"4px 10px",borderRadius:8,fontSize:13,fontWeight:800}}>{h.rating}</span>
+                      <span style={{color:c.textMuted,fontSize:12}}>/10</span>
+                    </div>
+                  ) : (
+                    <div style={{display:"flex",alignItems:"center",gap:4}}>
+                      {isLiveHotels && <span style={{background:"rgba(34,211,160,0.15)",color:c.success,padding:"3px 8px",borderRadius:6,fontSize:11,fontWeight:700}}>Live price</span>}
+                    </div>
+                  )}
+                  <div>
+                    <span style={{color:c.accent,fontWeight:900,fontSize:22}}>{priceLabel}</span>
+                    <span style={{color:c.textMuted,fontSize:11}}>/night</span>
+                    {totalLabel && <span style={{color:c.textMuted,fontSize:11}}> · {totalLabel}</span>}
                   </div>
-                  <div><span style={{color:c.accent,fontWeight:900,fontSize:22}}>~${h.pricePerNight}</span><span style={{color:c.textMuted,fontSize:11}}>/night</span></div>
                 </div>
                 {h.description && <p style={{color:c.textMuted,fontSize:13,margin:"0 0 10px",lineHeight:1.55}}>{h.description}</p>}
-                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
-                  {h.amenities?.map(a => (
-                    <span key={a} style={{background:c.bg2,border:`1px solid ${c.border}`,borderRadius:999,padding:"4px 10px",fontSize:11,color:c.textMuted,display:"inline-flex",alignItems:"center",gap:5}}>
-                      <Icon name={["wifi","pool","gym","coffee"].includes(a) ? a : "info"} size={12} color={c.textMuted}/>{a}
-                    </span>
-                  ))}
-                </div>
-                <span style={{fontSize:12,fontWeight:700,color:h.refundable?c.success:c.danger,display:"block",marginBottom:10}}>{h.refundable?"✓ Free cancellation":"Non-refundable"}</span>
+                {h.amenities?.length > 0 && (
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
+                    {h.amenities.map(a => (
+                      <span key={a} style={{background:c.bg2,border:`1px solid ${c.border}`,borderRadius:999,padding:"4px 10px",fontSize:11,color:c.textMuted,display:"inline-flex",alignItems:"center",gap:5}}>
+                        <Icon name={["wifi","pool","gym","coffee"].includes(a) ? a : "info"} size={12} color={c.textMuted}/>{a}
+                      </span>
+                    ))}
+                  </div>
+                )}
+                {!isLiveHotels && h.refundable !== undefined && (
+                  <span style={{fontSize:12,fontWeight:700,color:h.refundable?c.success:c.danger,display:"block",marginBottom:10}}>{h.refundable?"✓ Free cancellation":"Non-refundable"}</span>
+                )}
                 <a href={bookUrl} target="_blank" rel="noopener noreferrer"
                   style={{display:"block",textAlign:"center",padding:"11px 14px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800}}>
                   Book Now →
                 </a>
-                <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"center"}}>via Google Hotels · live prices from all sites</div>
+                <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"center"}}>via Booking.com · {isLiveHotels ? "live rates" : "confirm live pricing on site"}</div>
               </div>
             </div>
           );
@@ -1293,20 +1365,25 @@ function CarsTab({ form, apiKey }) {
   const { c, fontBody } = useTokens();
   const [cars, setCars] = useState(null);
   const [loading, setLoading] = useState(false);
+  const rentalDays = form.dateFrom && form.dateTo
+    ? Math.max(1, Math.round((new Date(form.dateTo) - new Date(form.dateFrom)) / 864e5))
+    : null;
 
   async function fetchCars() {
     if (!form.destination || !apiKey) return;
-    const ck = sCacheKey("cars", form.destination);
+    const travelMonth = form.dateFrom?.slice(0, 7) || "";
+    const ck = sCacheKey("cars", form.destination, travelMonth);
     const hit = sGet(ck);
     if (hit) { setCars(hit); return; }
     setLoading(true); setCars(null);
+    const carNights = form.dateFrom && form.dateTo
+      ? Math.max(1, Math.round((new Date(form.dateTo) - new Date(form.dateFrom)) / 864e5))
+      : 5;
+    const carMonthName = form.dateFrom ? new Date(form.dateFrom + "T12:00:00").toLocaleString("default", { month: "long" }) : "the travel period";
     try {
-      const nights = form.dateFrom && form.dateTo
-        ? Math.max(1, Math.round((new Date(form.dateTo) - new Date(form.dateFrom)) / 864e5))
-        : 5;
       const raw = await askClaude(
-        `Car rental data expert. Return ONLY a JSON array of 4 rental options. Strict rules: (1) example: a specific real car model commonly available at this destination (e.g. "Toyota Corolla", "Hyundai Tucson", "Ford Mustang"). (2) estimatedDailyRate: current market rates in USD — Economy $25-55, Compact SUV $45-85, Midsize $35-70, Luxury $75-180 — adjust upward for tourist-heavy or expensive destinations. (3) features: 2-3 accurate features for this category (choose from: Automatic, Manual, Air conditioning, GPS available, Unlimited mileage, Child seat available, Bluetooth, Hybrid). (4) recommended: mark the single best value-for-money option true. (5) iataAirport: the 3-letter IATA code of the nearest major airport where car rentals are available (e.g. "CDG" for Paris, "JFK" for New York, "LHR" for London). Each: {"category":"Economy"|"Compact SUV"|"Midsize"|"Luxury","example":"string","estimatedDailyRate":number,"features":["string"],"recommended":boolean,"supplier":"string (e.g. Enterprise, Hertz, Avis, Budget, Sixt)","iataAirport":"XXX"}. No markdown. Return exactly 4 items.`,
-        `Car rentals in ${form.destination} for ${nights} days. Budget: $${form.budget || 3000} total for ${form.travelers || 2} traveler(s). Style: ${form.style || "general"}.`,
+        `Car rental data expert. Return ONLY a JSON array of 4 rental options. Strict rules: (1) example: a specific real car model commonly available at this destination. (2) estimatedDailyRate: accurate USD daily rate for this destination in ${carMonthName}. Use destination-aware rates: Western Europe/UK/Australia/Scandinavia: Economy $45-80, Midsize $65-110, Compact SUV $75-130, Luxury $130-250; North America: Economy $30-60, Midsize $40-75, Compact SUV $50-90, Luxury $90-200; Southern/Eastern Europe, Japan, South Korea: Economy $30-60, Midsize $40-80, Compact SUV $55-100, Luxury $100-200; Southeast Asia, Latin America, Caribbean: Economy $25-50, Midsize $35-65, Compact SUV $45-80, Luxury $80-160. Apply peak season +20-35% (summer in Europe/North America, Christmas/New Year anywhere, spring break). (3) features: 2-3 accurate for this category from [Automatic, Manual, Air conditioning, GPS available, Unlimited mileage, Child seat available, Bluetooth, Hybrid]. (4) recommended: single best value option true. (5) iataAirport: nearest major airport IATA code. Each: {"category":"Economy"|"Compact SUV"|"Midsize"|"Luxury","example":"string","estimatedDailyRate":number,"features":["string"],"recommended":boolean,"supplier":"string","iataAirport":"XXX"}. No markdown. Exactly 4 items.`,
+        `Car rentals in ${form.destination} for ${carNights} days in ${carMonthName}. Budget: $${form.budget || 3000} total for ${form.travelers || 2} traveler(s). Style: ${form.style || "general"}.`,
         apiKey, 800
       );
       const parsed = parseJSON(raw);
@@ -1372,9 +1449,11 @@ function CarsTab({ form, apiKey }) {
         {Array.isArray(cars) && [...cars]
           .sort((a, b) => (b.recommended?1:0) - (a.recommended?1:0) || a.estimatedDailyRate - b.estimatedDailyRate)
           .map((car, i) => {
-            const expediaType = EXPEDIA_CAR_TYPE[car.category] || "";
-            const bookUrl = AFF.expediaCars(cityOnly(form.destination), form.dateFrom, form.dateTo, expediaType);
-            const bookSite = "Expedia";
+            const kayakCarType = KAYAK_CAR_TYPE[car.category] || "";
+            const bookUrl = car.iataAirport
+              ? AFF.kayakCars(car.iataAirport, form.dateFrom, form.dateTo, kayakCarType)
+              : AFF.expediaCars(cityOnly(form.destination), form.dateFrom, form.dateTo, EXPEDIA_CAR_TYPE[car.category]||"");
+            const bookSite = car.iataAirport ? "Kayak" : "Expedia";
             return (
               <div key={i} style={{background:c.surface,border:`1.5px solid ${car.recommended?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden"}}>
                 {car.recommended && <div style={{background:c.accent,padding:"5px 12px",fontSize:10,fontWeight:800,color:"#fff",letterSpacing:"0.08em",textAlign:"center"}}>★ BEST VALUE</div>}
@@ -1393,7 +1472,11 @@ function CarsTab({ form, apiKey }) {
                       {car.features.map(f => <span key={f} style={{background:c.bg2,border:`1px solid ${c.border}`,borderRadius:999,padding:"3px 9px",fontSize:11,color:c.textMuted}}>{f}</span>)}
                     </div>
                   )}
-                  <div style={{color:c.accent,fontWeight:900,fontSize:22,marginBottom:14}}>~${car.estimatedDailyRate}<span style={{color:c.textMuted,fontSize:12,fontWeight:500}}>/day</span></div>
+                  <div style={{marginBottom:14}}>
+                    <span style={{color:c.accent,fontWeight:900,fontSize:22}}>~${car.estimatedDailyRate}</span>
+                    <span style={{color:c.textMuted,fontSize:12,fontWeight:500}}>/day</span>
+                    {rentalDays && <span style={{color:c.textMuted,fontSize:11}}> · ~${car.estimatedDailyRate * rentalDays} total</span>}
+                  </div>
                   <a href={bookUrl} target="_blank" rel="noopener noreferrer"
                     style={{display:"block",textAlign:"center",padding:"11px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800}}>
                     Book Now →
