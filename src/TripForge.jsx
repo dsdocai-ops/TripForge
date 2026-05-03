@@ -937,8 +937,8 @@ function FlightsTab({ form, settings, apiKey }) {
     setLoading(true); setFlights(null);
     try {
       const raw = await askClaude(
-        `Flight expert. Return ONLY a JSON array of 4 realistic flight options. Each object: {"airline":"string","from":"string","to":"string","iataFrom":"XXX","iataTo":"YYY","depart":"HH:MM","arrive":"HH:MM","duration":"Xh Ym","stops":0,"estimatedPrice":000,"refundable":true,"flightNumber":"string"}. iataFrom and iataTo are the 3-letter IATA airport codes for the origin and destination. Use real airlines that serve this route. Vary airlines, stops (0 or 1), and prices. No markdown, no explanation. IMPORTANT: Return exactly 4 items. Never return an empty array.`,
-        `Flights from ${form.from || "New York"} to ${form.destination}${form.dateFrom ? ` on ${form.dateFrom}` : ""}. ${form.travelers || 2} traveler(s). Travel style: ${form.style || "general"}.`,
+        `Flight data expert. Return ONLY a JSON array of 4 flight options. Strict rules: (1) Only airlines that genuinely operate this exact route. (2) iataFrom/iataTo must be the correct primary IATA airport codes. (3) estimatedPrice = realistic economy fare per person one-way at current market rates — domestic US $120-450, transatlantic $380-950, intra-Europe $45-280, Asia-Pacific $280-850, adjust for season and route popularity. (4) Include both nonstop and 1-stop options where realistic. (5) flightNumber uses real airline IATA prefix + plausible number. (6) duration must be accurate for the route including layover if stops>0. (7) from/to fields are the city names. Each object: {"airline":"string","from":"string","to":"string","iataFrom":"XXX","iataTo":"YYY","depart":"HH:MM","arrive":"HH:MM","duration":"Xh Ym","stops":0,"estimatedPrice":000,"refundable":true,"flightNumber":"XX 000","bookingClass":"Economy"}. No markdown. Return exactly 4 items.`,
+        `Flights from ${form.from || "New York"} to ${form.destination}${form.dateFrom ? ` on ${form.dateFrom}` : ""}. ${form.travelers || 2} traveler(s). Travel style: ${form.style || "general"}. Budget consideration: $${form.budget || 3000} total trip.`,
         apiKey, 1200
       );
       const parsed = parseJSON(raw);
@@ -953,7 +953,9 @@ function FlightsTab({ form, settings, apiKey }) {
   useEffect(() => { if (form.destination && apiKey) fetchFlights(); }, [form.destination]);
 
   const filtered = Array.isArray(flights)
-    ? flights.filter(f => (!settings.refundableOnly || f.refundable) && (!settings.directOnly || f.stops === 0))
+    ? [...flights]
+        .filter(f => (!settings.refundableOnly || f.refundable) && (!settings.directOnly || f.stops === 0))
+        .sort((a, b) => (a.estimatedPrice * (1 + (a.stops||0) * 0.12)) - (b.estimatedPrice * (1 + (b.stops||0) * 0.12)))
     : [];
 
   if (!form.destination) return (
@@ -985,7 +987,7 @@ function FlightsTab({ form, settings, apiKey }) {
 
       <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:10,padding:"12px 16px",marginBottom:18,display:"flex",gap:10}}>
         <Icon name="info" size={16} color={c.info}/>
-        <p style={{color:c.textMuted,fontSize:13,margin:0,lineHeight:1.6}}>AI-estimated fares for {form.from || "your origin"} → {form.destination}. Always confirm live prices on booking sites above.</p>
+        <p style={{color:c.textMuted,fontSize:13,margin:0,lineHeight:1.6}}>AI-suggested options for {form.from || "your origin"} → {form.destination}, sorted by best value. Click <strong>Book Now</strong> for real-time pricing on Skyscanner.</p>
       </div>
 
       {loading && (
@@ -1010,60 +1012,53 @@ function FlightsTab({ form, settings, apiKey }) {
       )}
 
       <div style={{display:"flex",flexDirection:"column",gap:14}}>
-        {filtered.map((f, i) => (
-          <div key={i} style={{background:c.surface,border:`1.5px solid ${i===0?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden",position:"relative"}}>
-            {i===0 && <div style={{position:"absolute",top:14,right:14,zIndex:3,background:c.accent,color:"#fff",fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:20,letterSpacing:"0.08em"}}>TOP PICK</div>}
-            <div style={{position:"relative",height:168,overflow:"hidden"}}>
-              <Img src={getAirlinePhoto(f.airline)} fallbackSrc={AIRLINE_PHOTOS["_fallback"]} alt={`${f.airline} aircraft`} iconName="plane"/>
-              <div style={{position:"absolute",inset:0,background:"linear-gradient(to right,rgba(0,0,0,0.75) 0%,rgba(0,0,0,0.15) 65%,transparent 100%)"}}/>
-              <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"14px 20px"}}>
-                <div style={{color:"#fff",fontWeight:800,fontSize:20,letterSpacing:"-0.02em",textShadow:"0 1px 4px rgba(0,0,0,0.4)"}}>{f.airline}</div>
-                <div style={{color:"rgba(255,255,255,0.78)",fontSize:13,marginTop:2}}>{f.stops===0?"Nonstop":f.stops===1?"1 stop":`${f.stops} stops`} · {f.duration}</div>
-              </div>
-            </div>
-            <div style={{padding:"16px 20px",display:"flex",flexWrap:"wrap",alignItems:"center",justifyContent:"space-between",gap:14}}>
-              <div style={{display:"flex",gap:20,alignItems:"center"}}>
-                <div style={{textAlign:"center"}}>
-                  <div style={{color:c.textSubtle,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Depart</div>
-                  <div style={{color:c.text,fontWeight:900,fontSize:22,letterSpacing:"-0.02em"}}>{f.depart}</div>
-                  <div style={{color:c.textMuted,fontSize:12}}>{f.from}</div>
-                </div>
-                <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                  <div style={{color:c.textSubtle,fontSize:10}}>────</div>
-                  <Icon name="plane" size={14} color={c.accent}/>
-                </div>
-                <div style={{textAlign:"center"}}>
-                  <div style={{color:c.textSubtle,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Arrive</div>
-                  <div style={{color:c.text,fontWeight:900,fontSize:22,letterSpacing:"-0.02em"}}>{f.arrive}</div>
-                  <div style={{color:c.textMuted,fontSize:12}}>{f.to}</div>
+        {filtered.map((f, i) => {
+          const isBestDeal = i === 0;
+          const isNonstopBonus = i === 1 && f.stops === 0 && filtered[0].stops > 0;
+          const bookUrl = AFF.skyscanner(f.iataFrom||f.from||fromCity, f.iataTo||f.to||destCity, form.dateFrom, form.dateTo, form.travelers);
+          return (
+            <div key={i} style={{background:c.surface,border:`1.5px solid ${isBestDeal?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden",position:"relative"}}>
+              {isBestDeal && <div style={{position:"absolute",top:14,right:14,zIndex:3,background:c.accent,color:"#fff",fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:20,letterSpacing:"0.08em"}}>BEST DEAL</div>}
+              {isNonstopBonus && <div style={{position:"absolute",top:14,right:14,zIndex:3,background:c.teal,color:"#fff",fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:20,letterSpacing:"0.08em"}}>NONSTOP</div>}
+              <div style={{position:"relative",height:168,overflow:"hidden"}}>
+                <Img src={getAirlinePhoto(f.airline)} fallbackSrc={AIRLINE_PHOTOS["_fallback"]} alt={`${f.airline} aircraft`} iconName="plane"/>
+                <div style={{position:"absolute",inset:0,background:"linear-gradient(to right,rgba(0,0,0,0.75) 0%,rgba(0,0,0,0.15) 65%,transparent 100%)"}}/>
+                <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"14px 20px"}}>
+                  <div style={{color:"#fff",fontWeight:800,fontSize:20,letterSpacing:"-0.02em",textShadow:"0 1px 4px rgba(0,0,0,0.4)"}}>{f.airline}</div>
+                  <div style={{color:"rgba(255,255,255,0.78)",fontSize:13,marginTop:2}}>{f.flightNumber && <span style={{marginRight:8,opacity:0.9}}>{f.flightNumber}</span>}{f.stops===0?"Nonstop":f.stops===1?"1 stop":`${f.stops} stops`} · {f.duration}</div>
                 </div>
               </div>
-              <div style={{textAlign:"right"}}>
-                <div style={{color:c.accent,fontWeight:900,fontSize:26,letterSpacing:"-0.03em"}}>~${f.estimatedPrice}</div>
-                <div style={{color:c.textMuted,fontSize:11,margin:"2px 0 4px",fontStyle:"italic"}}>est. per person</div>
-                <div style={{color:f.refundable?c.success:c.danger,fontSize:12,fontWeight:700,margin:"2px 0 10px"}}>{f.refundable?"✓ Refundable":"Non-refundable"}</div>
-                <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end"}}>
-                  <a href={AFF.skyscanner(f.iataFrom||f.from||fromCity, f.iataTo||f.to||destCity, form.dateFrom, form.dateTo, form.travelers)} target="_blank" rel="noopener noreferrer"
-                    style={{display:"inline-block",padding:"9px 20px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:13,fontWeight:800,boxShadow:`0 4px 14px ${c.accentBorder}`,whiteSpace:"nowrap"}}>
-                    Skyscanner →
-                  </a>
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                    {[
-                      {label:"Google Flights", url:AFF.googleFlights(f.iataFrom||f.from||fromCity, f.iataTo||f.to||destCity, form.dateFrom)},
-                      {label:"Expedia", url:AFF.expediaFlights(f.iataFrom||f.from||fromCity, f.iataTo||f.to||destCity, form.dateFrom, form.travelers)},
-                      {label:"Kayak", url:AFF.kayakFlights(f.iataFrom||f.from||fromCity, f.iataTo||f.to||destCity, form.dateFrom, form.travelers)},
-                    ].map(s => (
-                      <a key={s.label} href={s.url} target="_blank" rel="noopener noreferrer"
-                        style={{padding:"6px 12px",background:c.bg2,border:`1px solid ${c.border}`,borderRadius:8,color:c.textMuted,textDecoration:"none",fontSize:12,fontWeight:600,whiteSpace:"nowrap"}}>
-                        {s.label}
-                      </a>
-                    ))}
+              <div style={{padding:"16px 20px",display:"flex",flexWrap:"wrap",alignItems:"center",justifyContent:"space-between",gap:14}}>
+                <div style={{display:"flex",gap:20,alignItems:"center"}}>
+                  <div style={{textAlign:"center"}}>
+                    <div style={{color:c.textSubtle,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Depart</div>
+                    <div style={{color:c.text,fontWeight:900,fontSize:22,letterSpacing:"-0.02em"}}>{f.depart}</div>
+                    <div style={{color:c.textMuted,fontSize:12}}>{f.iataFrom||f.from}</div>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                    <div style={{color:c.textSubtle,fontSize:10}}>────</div>
+                    <Icon name="plane" size={14} color={c.accent}/>
+                  </div>
+                  <div style={{textAlign:"center"}}>
+                    <div style={{color:c.textSubtle,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Arrive</div>
+                    <div style={{color:c.text,fontWeight:900,fontSize:22,letterSpacing:"-0.02em"}}>{f.arrive}</div>
+                    <div style={{color:c.textMuted,fontSize:12}}>{f.iataTo||f.to}</div>
                   </div>
                 </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{color:c.accent,fontWeight:900,fontSize:26,letterSpacing:"-0.03em"}}>~${f.estimatedPrice}</div>
+                  <div style={{color:c.textMuted,fontSize:11,margin:"2px 0 2px",fontStyle:"italic"}}>est. per person · {f.bookingClass||"Economy"}</div>
+                  <div style={{color:f.refundable?c.success:c.danger,fontSize:12,fontWeight:700,margin:"2px 0 12px"}}>{f.refundable?"✓ Refundable":"Non-refundable"}</div>
+                  <a href={bookUrl} target="_blank" rel="noopener noreferrer"
+                    style={{display:"inline-flex",alignItems:"center",gap:8,padding:"11px 22px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800,boxShadow:`0 6px 20px ${c.accentBorder}`,whiteSpace:"nowrap"}}>
+                    Book Now →
+                  </a>
+                  <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"right"}}>via Skyscanner</div>
+                </div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1083,8 +1078,8 @@ function HotelsTab({ form, settings, apiKey }) {
     setLoading(true); setHotels(null);
     try {
       const raw = await askClaude(
-        `Hotel expert. Return ONLY a JSON array of 4 hotels. Each: {"name":"string (real hotel name)","stars":4,"neighborhood":"string","description":"string max 15 words","pricePerNight":number,"amenities":["wifi","pool","gym","coffee"] (only include what the hotel realistically has, from this list: wifi pool gym coffee),"refundable":boolean,"rating":8.5}. Use real hotels at this destination. Vary star level and price. No markdown. IMPORTANT: Return exactly 4 items. Never return an empty array.`,
-        `Best hotels in ${form.destination} for ${form.travelers || 2} traveler(s) with a $${form.budget || 3000} total budget. Travel style: ${form.style || "general"}${form.dateFrom ? `. Dates: ${form.dateFrom} to ${form.dateTo}` : ""}.`,
+        `Hotel data expert. Return ONLY a JSON array of 4 real hotels. Strict rules: (1) Only real, currently-operating hotels at this exact destination — use the actual hotel brand name. (2) pricePerNight: current market nightly rate in USD — budget cities $50-120, mid-range cities $100-220, expensive cities $180-400, luxury tier $350-700. (3) rating: the hotel's actual known score on a 10-point scale (be accurate to the real property). (4) stars: the property's real star classification. (5) neighborhood: the actual district/area name. (6) amenities: only list what this specific hotel realistically offers from [wifi, pool, gym, coffee]. (7) Include variety: one budget, two mid-range, one upscale. Each: {"name":"string","stars":number,"neighborhood":"string","description":"string max 18 words","pricePerNight":number,"amenities":["wifi"],"refundable":boolean,"rating":number}. No markdown. Return exactly 4 items.`,
+        `Best hotels in ${form.destination} for ${form.travelers || 2} traveler(s) with a $${form.budget || 3000} total trip budget. Travel style: ${form.style || "general"}${form.dateFrom ? `. Dates: ${form.dateFrom} to ${form.dateTo}` : ""}.`,
         apiKey, 1400
       );
       const parsed = parseJSON(raw);
@@ -1098,7 +1093,11 @@ function HotelsTab({ form, settings, apiKey }) {
 
   useEffect(() => { if (form.destination && apiKey) fetchHotels(); }, [form.destination]);
 
-  const filtered = Array.isArray(hotels) ? hotels.filter(h => !settings.refundableOnly || h.refundable) : [];
+  const filtered = Array.isArray(hotels)
+    ? [...hotels]
+        .filter(h => !settings.refundableOnly || h.refundable)
+        .sort((a, b) => (a.pricePerNight||999) - (b.pricePerNight||999))
+    : [];
 
   if (!form.destination) return (
     <div style={{textAlign:"center",padding:"72px 20px"}}>
@@ -1150,55 +1149,49 @@ function HotelsTab({ form, settings, apiKey }) {
       )}
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:16}}>
-        {filtered.map((h, i) => (
-          <div key={i} style={{background:c.surface,border:`1.5px solid ${i===0?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden"}}>
-            {i===0 && <div style={{background:c.accent,padding:"7px 18px",fontSize:10,fontWeight:800,color:"#fff",letterSpacing:"0.1em",textAlign:"center"}}>★ TOP PICK</div>}
-            <div style={{height:168,position:"relative",overflow:"hidden"}}>
-              <Img src={HOTEL_PHOTOS[i % HOTEL_PHOTOS.length]} fallbackSrc={HOTEL_PHOTOS[0]} alt={h.name} iconName="hotel"/>
-              <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(0,0,0,0.72) 0%,transparent 55%)",pointerEvents:"none"}}/>
-              <div style={{position:"absolute",bottom:14,left:16,right:16}}>
-                <div style={{color:"#fff",fontWeight:800,fontSize:17,textShadow:"0 1px 4px rgba(0,0,0,0.5)"}}>{h.name}</div>
-                <div style={{color:"rgba(255,255,255,0.8)",fontSize:12}}>{"★".repeat(Math.min(5,Math.max(1,h.stars||4)))} {h.stars||4}-star · {h.neighborhood}</div>
-              </div>
-            </div>
-            <div style={{padding:18}}>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{background:"rgba(34,211,160,0.15)",color:c.success,padding:"4px 10px",borderRadius:8,fontSize:13,fontWeight:800}}>{h.rating||"—"}</span>
-                  <span style={{color:c.textMuted,fontSize:12}}>AI-estimated</span>
+        {filtered.map((h, i) => {
+          const isBestDeal = i === 0;
+          const bestRatedIdx = filtered.reduce((bi, hh, ii) => (hh.rating||0) > (filtered[bi].rating||0) ? ii : bi, 0);
+          const isTopRated = i === bestRatedIdx && !isBestDeal;
+          const bookUrl = `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(h.name+" "+cityOnly(form.destination))}&checkin=${form.dateFrom||""}&checkout=${form.dateTo||""}&group_adults=${form.travelers||2}&no_rooms=1&aid=YOURAFFID`;
+          return (
+            <div key={i} style={{background:c.surface,border:`1.5px solid ${isBestDeal?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden"}}>
+              {isBestDeal && <div style={{background:c.accent,padding:"7px 18px",fontSize:10,fontWeight:800,color:"#fff",letterSpacing:"0.1em",textAlign:"center"}}>★ BEST DEAL</div>}
+              {isTopRated && <div style={{background:c.teal,padding:"7px 18px",fontSize:10,fontWeight:800,color:"#fff",letterSpacing:"0.1em",textAlign:"center"}}>★ TOP RATED</div>}
+              <div style={{height:168,position:"relative",overflow:"hidden"}}>
+                <Img src={HOTEL_PHOTOS[i % HOTEL_PHOTOS.length]} fallbackSrc={HOTEL_PHOTOS[0]} alt={h.name} iconName="hotel"/>
+                <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(0,0,0,0.72) 0%,transparent 55%)",pointerEvents:"none"}}/>
+                <div style={{position:"absolute",bottom:14,left:16,right:16}}>
+                  <div style={{color:"#fff",fontWeight:800,fontSize:17,textShadow:"0 1px 4px rgba(0,0,0,0.5)"}}>{h.name}</div>
+                  <div style={{color:"rgba(255,255,255,0.8)",fontSize:12}}>{"★".repeat(Math.min(5,Math.max(1,h.stars||4)))} {h.stars||4}-star · {h.neighborhood}</div>
                 </div>
-                <div><span style={{color:c.accent,fontWeight:900,fontSize:22}}>~${h.pricePerNight}</span><span style={{color:c.textMuted,fontSize:11}}>/night</span></div>
               </div>
-              {h.description && <p style={{color:c.textMuted,fontSize:13,margin:"0 0 10px",lineHeight:1.55}}>{h.description}</p>}
-              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
-                {h.amenities?.map(a => (
-                  <span key={a} style={{background:c.bg2,border:`1px solid ${c.border}`,borderRadius:999,padding:"4px 10px",fontSize:11,color:c.textMuted,display:"inline-flex",alignItems:"center",gap:5}}>
-                    <Icon name={["wifi","pool","gym","coffee"].includes(a) ? a : "info"} size={12} color={c.textMuted}/>{a}
-                  </span>
-                ))}
-              </div>
-              <div style={{marginTop:4}}>
-                <span style={{fontSize:12,fontWeight:700,color:h.refundable?c.success:c.danger,display:"block",marginBottom:10}}>{h.refundable?"Free cancellation":"Non-refundable"}</span>
-                <a href={`https://www.booking.com/searchresults.html?ss=${encodeURIComponent(h.name+" "+cityOnly(form.destination))}&checkin=${form.dateFrom||""}&checkout=${form.dateTo||""}&group_adults=${form.travelers||2}&no_rooms=1&aid=YOURAFFID`} target="_blank" rel="noopener noreferrer"
-                  style={{display:"block",textAlign:"center",padding:"9px 14px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:13,fontWeight:800,marginBottom:6}}>
-                  Booking.com →
-                </a>
-                <div style={{display:"flex",gap:5}}>
-                  {[
-                    {label:"Expedia", url:AFF.expediaHotels(h.name+" "+cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers)},
-                    {label:"Hotels.com", url:AFF.hotelscom(h.name+" "+cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers)},
-                    {label:"Kayak", url:`https://www.kayak.com/hotels/${encodeURIComponent(cityOnly(form.destination)||"")}/${form.dateFrom||""}/${form.dateTo||""}/${form.travelers||2}adults`},
-                  ].map(s => (
-                    <a key={s.label} href={s.url} target="_blank" rel="noopener noreferrer"
-                      style={{flex:1,textAlign:"center",padding:"6px 4px",background:c.bg2,border:`1px solid ${c.border}`,borderRadius:8,color:c.textMuted,textDecoration:"none",fontSize:11,fontWeight:600}}>
-                      {s.label}
-                    </a>
+              <div style={{padding:18}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{background:"rgba(34,211,160,0.15)",color:c.success,padding:"4px 10px",borderRadius:8,fontSize:13,fontWeight:800}}>{h.rating||"—"}</span>
+                    <span style={{color:c.textMuted,fontSize:12}}>/10</span>
+                  </div>
+                  <div><span style={{color:c.accent,fontWeight:900,fontSize:22}}>~${h.pricePerNight}</span><span style={{color:c.textMuted,fontSize:11}}>/night</span></div>
+                </div>
+                {h.description && <p style={{color:c.textMuted,fontSize:13,margin:"0 0 10px",lineHeight:1.55}}>{h.description}</p>}
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:14}}>
+                  {h.amenities?.map(a => (
+                    <span key={a} style={{background:c.bg2,border:`1px solid ${c.border}`,borderRadius:999,padding:"4px 10px",fontSize:11,color:c.textMuted,display:"inline-flex",alignItems:"center",gap:5}}>
+                      <Icon name={["wifi","pool","gym","coffee"].includes(a) ? a : "info"} size={12} color={c.textMuted}/>{a}
+                    </span>
                   ))}
                 </div>
+                <span style={{fontSize:12,fontWeight:700,color:h.refundable?c.success:c.danger,display:"block",marginBottom:10}}>{h.refundable?"✓ Free cancellation":"Non-refundable"}</span>
+                <a href={bookUrl} target="_blank" rel="noopener noreferrer"
+                  style={{display:"block",textAlign:"center",padding:"11px 14px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800}}>
+                  Book Now →
+                </a>
+                <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"center"}}>via Booking.com</div>
               </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
@@ -1224,9 +1217,9 @@ function CarsTab({ form, apiKey }) {
         ? Math.max(1, Math.round((new Date(form.dateTo) - new Date(form.dateFrom)) / 864e5))
         : 5;
       const raw = await askClaude(
-        `Car rental expert. Return ONLY a JSON array of 4 car rental options. Each: {"category":"Economy"|"Compact SUV"|"Midsize"|"Luxury","example":"string (specific popular model)","estimatedDailyRate":number,"features":["string","string"],"recommended":boolean}. Use realistic local pricing for the destination. Mark exactly one as recommended. No markdown. IMPORTANT: Return exactly 4 items. Never return an empty array.`,
+        `Car rental data expert. Return ONLY a JSON array of 4 rental options. Strict rules: (1) example: a specific real car model commonly available at this destination (e.g. "Toyota Corolla", "Hyundai Tucson", "Ford Mustang"). (2) estimatedDailyRate: current market rates in USD — Economy $25-55, Compact SUV $45-85, Midsize $35-70, Luxury $75-180 — adjust upward for tourist-heavy or expensive destinations. (3) features: 2-3 accurate features for this category (choose from: Automatic, Manual, Air conditioning, GPS available, Unlimited mileage, Child seat available, Bluetooth, Hybrid). (4) recommended: mark the single best value-for-money option true. Each: {"category":"Economy"|"Compact SUV"|"Midsize"|"Luxury","example":"string","estimatedDailyRate":number,"features":["string"],"recommended":boolean,"supplier":"string (e.g. Enterprise, Hertz, Avis, Budget, Sixt)"}. No markdown. Return exactly 4 items.`,
         `Car rentals in ${form.destination} for ${nights} days. Budget: $${form.budget || 3000} total for ${form.travelers || 2} traveler(s). Style: ${form.style || "general"}.`,
-        apiKey, 700
+        apiKey, 800
       );
       const parsed = parseJSON(raw);
       const data = Array.isArray(parsed) ? parsed : parsed.cars || [];
@@ -1288,44 +1281,38 @@ function CarsTab({ form, apiKey }) {
       )}
 
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:16}}>
-        {Array.isArray(cars) && cars.map((car, i) => (
-          <div key={i} style={{background:c.surface,border:`1.5px solid ${car.recommended?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden"}}>
-            {car.recommended && <div style={{background:c.accent,padding:"5px 12px",fontSize:10,fontWeight:800,color:"#fff",letterSpacing:"0.08em",textAlign:"center"}}>★ RECOMMENDED</div>}
-            <div style={{height:168,position:"relative",overflow:"hidden"}}>
-              <Img src={categoryPhoto(car.category)} fallbackSrc={CAR_PHOTOS._fallback} alt={car.example||car.category} iconName="car"/>
-              <div style={{position:"absolute",inset:0,background:"linear-gradient(to bottom,rgba(0,0,0,0.55) 0%,transparent 50%)"}}/>
-              <div style={{position:"absolute",top:14,left:14}}>
-                <span style={{background:"rgba(0,0,0,0.65)",color:"#fff",fontSize:11,fontWeight:800,padding:"5px 12px",borderRadius:20,backdropFilter:"blur(6px)",letterSpacing:"0.05em"}}>{(car.category||"Car").toUpperCase()}</span>
-              </div>
-            </div>
-            <div style={{padding:18}}>
-              <div style={{color:c.text,fontWeight:700,fontSize:16}}>{car.example}</div>
-              <div style={{color:c.textMuted,fontSize:13,margin:"4px 0 10px"}}>or similar</div>
-              {car.features?.length > 0 && (
-                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
-                  {car.features.map(f => <span key={f} style={{background:c.bg2,border:`1px solid ${c.border}`,borderRadius:999,padding:"3px 9px",fontSize:11,color:c.textMuted}}>{f}</span>)}
+        {Array.isArray(cars) && [...cars]
+          .sort((a, b) => (b.recommended?1:0) - (a.recommended?1:0) || a.estimatedDailyRate - b.estimatedDailyRate)
+          .map((car, i) => {
+            const bookUrl = AFF.kayakCars(cityOnly(form.destination), form.dateFrom, form.dateTo) + (KAYAK_CAR_TYPE[car.category] ? `?filter=cabtype_${KAYAK_CAR_TYPE[car.category]}` : "");
+            return (
+              <div key={i} style={{background:c.surface,border:`1.5px solid ${car.recommended?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden"}}>
+                {car.recommended && <div style={{background:c.accent,padding:"5px 12px",fontSize:10,fontWeight:800,color:"#fff",letterSpacing:"0.08em",textAlign:"center"}}>★ BEST VALUE</div>}
+                <div style={{height:168,position:"relative",overflow:"hidden"}}>
+                  <Img src={categoryPhoto(car.category)} fallbackSrc={CAR_PHOTOS._fallback} alt={car.example||car.category} iconName="car"/>
+                  <div style={{position:"absolute",inset:0,background:"linear-gradient(to bottom,rgba(0,0,0,0.55) 0%,transparent 50%)"}}/>
+                  <div style={{position:"absolute",top:14,left:14}}>
+                    <span style={{background:"rgba(0,0,0,0.65)",color:"#fff",fontSize:11,fontWeight:800,padding:"5px 12px",borderRadius:20,backdropFilter:"blur(6px)",letterSpacing:"0.05em"}}>{(car.category||"Car").toUpperCase()}</span>
+                  </div>
                 </div>
-              )}
-              <div style={{color:c.accent,fontWeight:900,fontSize:22,marginBottom:10}}>~${car.estimatedDailyRate}<span style={{color:c.textMuted,fontSize:12,fontWeight:500}}>/day</span></div>
-              <a href={AFF.kayakCars(cityOnly(form.destination), form.dateFrom, form.dateTo) + (KAYAK_CAR_TYPE[car.category] ? `?filter=cabtype_${KAYAK_CAR_TYPE[car.category]}` : "")} target="_blank" rel="noopener noreferrer"
-                style={{display:"block",textAlign:"center",padding:"10px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:13,fontWeight:800,marginBottom:6}}>
-                Kayak →
-              </a>
-              <div style={{display:"flex",gap:5}}>
-                {[
-                  {label:"RentalCars", url:AFF.rentalcars(cityOnly(form.destination), form.dateFrom, form.dateTo)},
-                  {label:"Expedia", url:AFF.expediaCars(cityOnly(form.destination), form.dateFrom, form.dateTo)},
-                  {label:"Costco", url:"https://www.costcotravel.com/Rental-Cars"},
-                ].map(s => (
-                  <a key={s.label} href={s.url} target="_blank" rel="noopener noreferrer"
-                    style={{flex:1,textAlign:"center",padding:"6px 4px",background:c.bg2,border:`1px solid ${c.border}`,borderRadius:8,color:c.textMuted,textDecoration:"none",fontSize:11,fontWeight:600}}>
-                    {s.label}
+                <div style={{padding:18}}>
+                  <div style={{color:c.text,fontWeight:700,fontSize:16}}>{car.example}</div>
+                  <div style={{color:c.textMuted,fontSize:13,margin:"2px 0 8px"}}>{car.supplier ? `${car.supplier} · ` : ""}or similar</div>
+                  {car.features?.length > 0 && (
+                    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+                      {car.features.map(f => <span key={f} style={{background:c.bg2,border:`1px solid ${c.border}`,borderRadius:999,padding:"3px 9px",fontSize:11,color:c.textMuted}}>{f}</span>)}
+                    </div>
+                  )}
+                  <div style={{color:c.accent,fontWeight:900,fontSize:22,marginBottom:14}}>~${car.estimatedDailyRate}<span style={{color:c.textMuted,fontSize:12,fontWeight:500}}>/day</span></div>
+                  <a href={bookUrl} target="_blank" rel="noopener noreferrer"
+                    style={{display:"block",textAlign:"center",padding:"11px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800}}>
+                    Book Now →
                   </a>
-                ))}
+                  <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"center"}}>via Kayak</div>
+                </div>
               </div>
-            </div>
-          </div>
-        ))}
+            );
+          })}
       </div>
     </div>
   );
