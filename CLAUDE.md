@@ -71,9 +71,7 @@ All affiliate placeholders use `YOURAFFID`. Search for this string to find every
 | `ANTHROPIC_API_KEY` | Vercel dashboard (no `VITE_` prefix) | Used server-side only in `api/claude.js` |
 | `KV_REST_API_URL` | Vercel KV integration | Upstash Redis URL, injected automatically |
 | `KV_REST_API_TOKEN` | Vercel KV integration | Upstash Redis token, injected automatically |
-| `AMADEUS_CLIENT_ID` | Vercel dashboard | Amadeus API key for live flight prices (`api/flights.js`) |
-| `AMADEUS_CLIENT_SECRET` | Vercel dashboard | Amadeus API secret for live flight prices (`api/flights.js`) |
-| `AMADEUS_ENV` | Vercel dashboard (optional) | Set to `test` to use Amadeus sandbox; omit for production |
+| `TRAVELPAYOUTS_TOKEN` | Vercel dashboard | Travelpayouts API token for live flight prices (`api/flights.js`) |
 
 ### Build quirk
 

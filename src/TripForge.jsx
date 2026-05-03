@@ -929,7 +929,7 @@ function RestaurantsTab({ form, apiKey }) {
   );
 }
 
-// ─── Flights Tab — AI-powered flight suggestions ──────────────────────────────
+// ─── Flights Tab — live prices by cabin class (Travelpayouts) + AI fallback ────
 function FlightsTab({ form, settings, apiKey }) {
   const { c, fontBody } = useTokens();
   const [flights, setFlights] = useState(null);
@@ -937,14 +937,34 @@ function FlightsTab({ form, settings, apiKey }) {
   const fromCity = cityOnly(form.from);
   const destCity = cityOnly(form.destination);
   const skUrl = AFF.skyscanner(fromCity, destCity, form.dateFrom, form.dateTo, form.travelers);
+  const proxyBase = import.meta.env.VITE_PROXY_URL || "";
 
   async function fetchFlights() {
-    if (!form.destination || !apiKey) return;
-    const ck = sCacheKey("flights", form.destination, form.from, form.dateFrom);
+    if (!form.destination) return;
+    const ck = sCacheKey("flights2", form.destination, form.from, form.dateFrom);
     const hit = sGet(ck);
     if (hit) { setFlights(hit); return; }
     setLoading(true); setFlights(null);
     try {
+      // 1. Try Travelpayouts live prices
+      if (proxyBase) {
+        const liveRes = await fetch(proxyBase.replace("/claude", "/flights"), {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ from: fromCity, to: destCity, date: form.dateFrom, adults: form.travelers || 1 }),
+        }).catch(() => null);
+        if (liveRes?.ok) {
+          const liveData = await liveRes.json().catch(() => null);
+          if (liveData?.live && liveData.cabins?.length) {
+            sSet(ck, liveData);
+            setFlights(liveData);
+            setLoading(false);
+            return;
+          }
+        }
+      }
+      // 2. Fall back to Claude AI estimates
+      if (!apiKey) throw new Error("no key");
       const raw = await askClaude(
         `Flight data expert. Return ONLY a JSON array of 4 flight options. Strict rules: (1) Only airlines that genuinely operate this exact route. (2) iataFrom/iataTo must be the correct primary IATA airport codes. (3) estimatedPrice = realistic economy fare per person one-way at current market rates — domestic US $120-450, transatlantic $380-950, intra-Europe $45-280, Asia-Pacific $280-850, adjust for season and route popularity. (4) Include both nonstop and 1-stop options where realistic. (5) flightNumber uses real airline IATA prefix + plausible number. (6) duration must be accurate for the route including layover if stops>0. (7) from/to fields are the city names. Each object: {"airline":"string","from":"string","to":"string","iataFrom":"XXX","iataTo":"YYY","depart":"HH:MM","arrive":"HH:MM","duration":"Xh Ym","stops":0,"estimatedPrice":000,"refundable":true,"flightNumber":"XX 000","bookingClass":"Economy"}. No markdown. Return exactly 4 items.`,
         `Flights from ${form.from || "New York"} to ${form.destination}${form.dateFrom ? ` on ${form.dateFrom}` : ""}. ${form.travelers || 2} traveler(s). Travel style: ${form.style || "general"}. Budget consideration: $${form.budget || 3000} total trip.`,
@@ -959,8 +979,9 @@ function FlightsTab({ form, settings, apiKey }) {
     setLoading(false);
   }
 
-  useEffect(() => { if (form.destination && apiKey) fetchFlights(); }, [form.destination]);
+  useEffect(() => { if (form.destination) fetchFlights(); }, [form.destination]);
 
+  const isLive = flights?.live === true;
   const filtered = Array.isArray(flights)
     ? [...flights]
         .filter(f => (!settings.refundableOnly || f.refundable) && (!settings.directOnly || f.stops === 0))
@@ -990,14 +1011,22 @@ function FlightsTab({ form, settings, apiKey }) {
           </a>
         ))}
         <Btn onClick={fetchFlights} disabled={loading} variant="ghost" style={{fontSize:13,padding:"9px 16px"}}>
-          <Icon name="sparkle" size={14} color={c.accentHi}/>{loading ? "Searching…" : "Refresh"}
+          <Icon name="sparkle" size={14} color={c.accentHi}/>{loading ? "Searching..." : "Refresh"}
         </Btn>
       </div>
 
-      <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:10,padding:"12px 16px",marginBottom:18,display:"flex",gap:10}}>
-        <Icon name="info" size={16} color={c.info}/>
-        <p style={{color:c.textMuted,fontSize:13,margin:0,lineHeight:1.6}}>AI-suggested options for {form.from || "your origin"} → {form.destination}, sorted by best value. Click <strong>Book Now</strong> for real-time pricing on Skyscanner.</p>
-      </div>
+      {isLive && (
+        <div style={{background:c.accentLow,border:`1.5px solid ${c.accentBorder}`,borderRadius:10,padding:"10px 16px",marginBottom:18,display:"flex",gap:10,alignItems:"center"}}>
+          <span style={{fontSize:16}}>🟢</span>
+          <p style={{color:c.accentHi,fontSize:13,margin:0,fontWeight:700}}>Live prices via Travelpayouts — best fare per cabin class · updated {Math.round((Date.now()-(flights.fetchedAt||Date.now()))/60000)||"just"} min ago</p>
+        </div>
+      )}
+      {!isLive && !loading && !flights?._error && Array.isArray(flights) && (
+        <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:10,padding:"12px 16px",marginBottom:18,display:"flex",gap:10}}>
+          <Icon name="info" size={16} color={c.info}/>
+          <p style={{color:c.textMuted,fontSize:13,margin:0,lineHeight:1.6}}>AI-suggested options for {form.from || "your origin"} to {form.destination}, sorted by best value. Click <strong>Book Now</strong> for real-time pricing on Kayak.</p>
+        </div>
+      )}
 
       {loading && (
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
@@ -1014,66 +1043,109 @@ function FlightsTab({ form, settings, apiKey }) {
         </div>
       )}
 
-      {!loading && Array.isArray(flights) && filtered.length === 0 && flights.length > 0 && (
+      {isLive && (
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:16}}>
+          {flights.cabins.map((cab, i) => {
+            const bookUrl = AFF.kayakFlightsIATA(flights.fromCode, flights.toCode, form.dateFrom, form.travelers||1, cab.kayakCabin);
+            const isCheapest = i === 0;
+            return (
+              <div key={cab.cabin} style={{background:c.surface,border:`1.5px solid ${isCheapest?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+                {isCheapest && <div style={{background:c.accent,padding:"6px 14px",fontSize:10,fontWeight:800,color:"#fff",letterSpacing:"0.1em",textAlign:"center"}}>LOWEST PRICE</div>}
+                <div style={{position:"relative",height:130,overflow:"hidden"}}>
+                  <Img src={getAirlinePhoto(cab.airline)} fallbackSrc={AIRLINE_PHOTOS["_fallback"]} alt="aircraft" iconName="plane"/>
+                  <div style={{position:"absolute",inset:0,background:"linear-gradient(to top,rgba(0,0,0,0.78) 0%,transparent 60%)"}}/>
+                  <div style={{position:"absolute",bottom:10,left:14,right:14}}>
+                    <div style={{color:"#fff",fontWeight:800,fontSize:15,letterSpacing:"-0.01em"}}>{cab.label}</div>
+                    <div style={{color:"rgba(255,255,255,0.75)",fontSize:11,marginTop:1}}>
+                      {cab.airline && <span style={{marginRight:6}}>{cab.airline}</span>}
+                      {cab.stops===0?"Nonstop":cab.stops===1?"1 stop":`${cab.stops} stops`}
+                    </div>
+                  </div>
+                </div>
+                <div style={{padding:"14px 16px",flex:1,display:"flex",flexDirection:"column",justifyContent:"space-between"}}>
+                  <div>
+                    {cab.depart && (
+                      <div style={{color:c.textMuted,fontSize:12,marginBottom:8}}>Departs {cab.depart}</div>
+                    )}
+                    <div style={{color:c.accent,fontWeight:900,fontSize:28,letterSpacing:"-0.03em",lineHeight:1}}>${Math.round(cab.price)}</div>
+                    <div style={{color:cab.isLivePrice?c.success:c.textMuted,fontSize:11,margin:"3px 0 12px",fontWeight:600}}>
+                      {cab.isLivePrice ? "live fare · per person" : "est. from economy fare"}
+                    </div>
+                  </div>
+                  <a href={bookUrl} target="_blank" rel="noopener noreferrer"
+                    style={{display:"block",textAlign:"center",padding:"11px 10px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800}}>
+                    Book Now
+                  </a>
+                  <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"center"}}>via Kayak · {cab.label}</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {!isLive && !loading && Array.isArray(flights) && filtered.length === 0 && flights.length > 0 && (
         <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:14,padding:"20px 24px",textAlign:"center"}}>
           <p style={{color:c.textMuted,fontSize:14,margin:0}}>No flights match your current filters. Try adjusting refundable or direct-only settings.</p>
         </div>
       )}
 
-      <div style={{display:"flex",flexDirection:"column",gap:14}}>
-        {filtered.map((f, i) => {
-          const isBestDeal = i === 0;
-          const isNonstopBonus = i === 1 && f.stops === 0 && filtered[0].stops > 0;
-          const hasIATA = f.iataFrom && f.iataTo;
-          const bookUrl = hasIATA
-            ? AFF.kayakFlightsIATA(f.iataFrom, f.iataTo, form.dateFrom, form.travelers)
-            : AFF.skyscanner(f.from||fromCity, f.to||destCity, form.dateFrom, form.dateTo, form.travelers);
-          const bookSite = hasIATA ? "Kayak" : "Skyscanner";
-          return (
-            <div key={i} style={{background:c.surface,border:`1.5px solid ${isBestDeal?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden",position:"relative"}}>
-              {isBestDeal && <div style={{position:"absolute",top:14,right:14,zIndex:3,background:c.accent,color:"#fff",fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:20,letterSpacing:"0.08em"}}>BEST DEAL</div>}
-              {isNonstopBonus && <div style={{position:"absolute",top:14,right:14,zIndex:3,background:c.teal,color:"#fff",fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:20,letterSpacing:"0.08em"}}>NONSTOP</div>}
-              <div style={{position:"relative",height:168,overflow:"hidden"}}>
-                <Img src={getAirlinePhoto(f.airline)} fallbackSrc={AIRLINE_PHOTOS["_fallback"]} alt={`${f.airline} aircraft`} iconName="plane"/>
-                <div style={{position:"absolute",inset:0,background:"linear-gradient(to right,rgba(0,0,0,0.75) 0%,rgba(0,0,0,0.15) 65%,transparent 100%)"}}/>
-                <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"14px 20px"}}>
-                  <div style={{color:"#fff",fontWeight:800,fontSize:20,letterSpacing:"-0.02em",textShadow:"0 1px 4px rgba(0,0,0,0.4)"}}>{f.airline}</div>
-                  <div style={{color:"rgba(255,255,255,0.78)",fontSize:13,marginTop:2}}>{f.flightNumber && <span style={{marginRight:8,opacity:0.9}}>{f.flightNumber}</span>}{f.stops===0?"Nonstop":f.stops===1?"1 stop":`${f.stops} stops`} · {f.duration}</div>
+      {!isLive && (
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          {filtered.map((f, i) => {
+            const isBestDeal = i === 0;
+            const isNonstopBonus = i === 1 && f.stops === 0 && filtered[0].stops > 0;
+            const hasIATA = f.iataFrom && f.iataTo;
+            const bookUrl = hasIATA
+              ? AFF.kayakFlightsIATA(f.iataFrom, f.iataTo, form.dateFrom, form.travelers)
+              : AFF.skyscanner(f.from||fromCity, f.to||destCity, form.dateFrom, form.dateTo, form.travelers);
+            const bookSite = hasIATA ? "Kayak" : "Skyscanner";
+            return (
+              <div key={i} style={{background:c.surface,border:`1.5px solid ${isBestDeal?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden",position:"relative"}}>
+                {isBestDeal && <div style={{position:"absolute",top:14,right:14,zIndex:3,background:c.accent,color:"#fff",fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:20,letterSpacing:"0.08em"}}>BEST DEAL</div>}
+                {isNonstopBonus && <div style={{position:"absolute",top:14,right:14,zIndex:3,background:c.teal,color:"#fff",fontSize:10,fontWeight:800,padding:"4px 10px",borderRadius:20,letterSpacing:"0.08em"}}>NONSTOP</div>}
+                <div style={{position:"relative",height:168,overflow:"hidden"}}>
+                  <Img src={getAirlinePhoto(f.airline)} fallbackSrc={AIRLINE_PHOTOS["_fallback"]} alt={`${f.airline} aircraft`} iconName="plane"/>
+                  <div style={{position:"absolute",inset:0,background:"linear-gradient(to right,rgba(0,0,0,0.75) 0%,rgba(0,0,0,0.15) 65%,transparent 100%)"}}/>
+                  <div style={{position:"absolute",bottom:0,left:0,right:0,padding:"14px 20px"}}>
+                    <div style={{color:"#fff",fontWeight:800,fontSize:20,letterSpacing:"-0.02em",textShadow:"0 1px 4px rgba(0,0,0,0.4)"}}>{f.airline}</div>
+                    <div style={{color:"rgba(255,255,255,0.78)",fontSize:13,marginTop:2}}>{f.flightNumber && <span style={{marginRight:8,opacity:0.9}}>{f.flightNumber}</span>}{f.stops===0?"Nonstop":f.stops===1?"1 stop":`${f.stops} stops`} · {f.duration}</div>
+                  </div>
+                </div>
+                <div style={{padding:"16px 20px",display:"flex",flexWrap:"wrap",alignItems:"center",justifyContent:"space-between",gap:14}}>
+                  <div style={{display:"flex",gap:20,alignItems:"center"}}>
+                    <div style={{textAlign:"center"}}>
+                      <div style={{color:c.textSubtle,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Depart</div>
+                      <div style={{color:c.text,fontWeight:900,fontSize:22,letterSpacing:"-0.02em"}}>{f.depart}</div>
+                      <div style={{color:c.textMuted,fontSize:12}}>{f.iataFrom||f.from}</div>
+                    </div>
+                    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
+                      <div style={{color:c.textSubtle,fontSize:10}}>----</div>
+                      <Icon name="plane" size={14} color={c.accent}/>
+                    </div>
+                    <div style={{textAlign:"center"}}>
+                      <div style={{color:c.textSubtle,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Arrive</div>
+                      <div style={{color:c.text,fontWeight:900,fontSize:22,letterSpacing:"-0.02em"}}>{f.arrive}</div>
+                      <div style={{color:c.textMuted,fontSize:12}}>{f.iataTo||f.to}</div>
+                    </div>
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <div style={{color:c.textMuted,fontSize:11,marginBottom:2,fontWeight:600}}>{f.bookingClass||"Economy"} · {f.stops===0?"Nonstop":f.stops===1?"1 stop":`${f.stops} stops`}</div>
+                    <div style={{color:c.accent,fontWeight:900,fontSize:26,letterSpacing:"-0.03em"}}>~${f.estimatedPrice}</div>
+                    <div style={{color:c.textMuted,fontSize:10,margin:"2px 0 2px",fontStyle:"italic"}}>est. · live prices on site</div>
+                    <div style={{color:f.refundable?c.success:c.danger,fontSize:12,fontWeight:700,margin:"4px 0 12px"}}>{f.refundable?"Refundable":"Non-refundable"}</div>
+                    <a href={bookUrl} target="_blank" rel="noopener noreferrer"
+                      style={{display:"inline-flex",alignItems:"center",gap:8,padding:"11px 22px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800,boxShadow:`0 6px 20px ${c.accentBorder}`,whiteSpace:"nowrap"}}>
+                      Book Now
+                    </a>
+                    <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"right"}}>via {bookSite} · compares all airlines</div>
+                  </div>
                 </div>
               </div>
-              <div style={{padding:"16px 20px",display:"flex",flexWrap:"wrap",alignItems:"center",justifyContent:"space-between",gap:14}}>
-                <div style={{display:"flex",gap:20,alignItems:"center"}}>
-                  <div style={{textAlign:"center"}}>
-                    <div style={{color:c.textSubtle,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Depart</div>
-                    <div style={{color:c.text,fontWeight:900,fontSize:22,letterSpacing:"-0.02em"}}>{f.depart}</div>
-                    <div style={{color:c.textMuted,fontSize:12}}>{f.iataFrom||f.from}</div>
-                  </div>
-                  <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:2}}>
-                    <div style={{color:c.textSubtle,fontSize:10}}>────</div>
-                    <Icon name="plane" size={14} color={c.accent}/>
-                  </div>
-                  <div style={{textAlign:"center"}}>
-                    <div style={{color:c.textSubtle,fontSize:10,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Arrive</div>
-                    <div style={{color:c.text,fontWeight:900,fontSize:22,letterSpacing:"-0.02em"}}>{f.arrive}</div>
-                    <div style={{color:c.textMuted,fontSize:12}}>{f.iataTo||f.to}</div>
-                  </div>
-                </div>
-                <div style={{textAlign:"right"}}>
-                  <div style={{color:c.textMuted,fontSize:11,marginBottom:2,fontWeight:600}}>{f.bookingClass||"Economy"} · {f.stops===0?"Nonstop":f.stops===1?"1 stop":`${f.stops} stops`}</div>
-                  <div style={{color:c.accent,fontWeight:900,fontSize:26,letterSpacing:"-0.03em"}}>~${f.estimatedPrice}</div>
-                  <div style={{color:c.textMuted,fontSize:10,margin:"2px 0 2px",fontStyle:"italic"}}>rough guide · live prices on site</div>
-                  <div style={{color:f.refundable?c.success:c.danger,fontSize:12,fontWeight:700,margin:"4px 0 12px"}}>{f.refundable?"✓ Refundable":"Non-refundable"}</div>
-                  <a href={bookUrl} target="_blank" rel="noopener noreferrer"
-                    style={{display:"inline-flex",alignItems:"center",gap:8,padding:"11px 22px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800,boxShadow:`0 6px 20px ${c.accentBorder}`,whiteSpace:"nowrap"}}>
-                    Book Now →
-                  </a>
-                  <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"right"}}>via {bookSite} · compares all airlines</div>
-                </div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

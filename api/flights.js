@@ -5,56 +5,32 @@ const redis = new Redis({
   token: process.env.KV_REST_API_TOKEN,
 });
 
-const AM_ID   = process.env.AMADEUS_CLIENT_ID;
-const AM_SEC  = process.env.AMADEUS_CLIENT_SECRET;
-const AM_BASE = process.env.AMADEUS_ENV === "test"
-  ? "https://test.api.amadeus.com"
-  : "https://api.amadeus.com";
+const TP_TOKEN = process.env.TRAVELPAYOUTS_TOKEN;
 
-const CABINS = {
-  ECONOMY:         { label: "Economy",         kayak: "e",  order: 0 },
-  PREMIUM_ECONOMY: { label: "Premium Economy", kayak: "pe", order: 1 },
-  BUSINESS:        { label: "Business Class",  kayak: "b",  order: 2 },
-  FIRST:           { label: "First Class",     kayak: "f",  order: 3 },
-};
+// Travelpayouts returns cheapest economy price; other cabins are estimated from it
+const CABIN_CLASSES = [
+  { code: "economy",         label: "Economy",         kayak: "e",  mult: 1.0,  live: true  },
+  { code: "premium_economy", label: "Premium Economy", kayak: "pe", mult: 1.8,  live: false },
+  { code: "business",        label: "Business Class",  kayak: "b",  mult: 4.2,  live: false },
+  { code: "first",           label: "First Class",     kayak: "f",  mult: 7.5,  live: false },
+];
 
-async function getToken() {
-  const cached = await redis.get("tf:amadeus:token");
-  if (cached) return cached;
-
-  const r = await fetch(`${AM_BASE}/v1/security/oauth2/token`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type:    "client_credentials",
-      client_id:     AM_ID,
-      client_secret: AM_SEC,
-    }),
-  });
-  if (!r.ok) throw new Error(`Amadeus token ${r.status}`);
-  const d = await r.json();
-  const token = d.access_token;
-  // cache for 28 min (token lives 30 min)
-  await redis.set("tf:amadeus:token", token, { ex: 1680 });
-  return token;
-}
-
-async function cityToIata(name, token) {
-  if (!name) return null;
-  const upper = name.trim().toUpperCase();
+async function cityToIata(query) {
+  if (!query) return null;
+  const upper = query.trim().toUpperCase();
   if (/^[A-Z]{3}$/.test(upper)) return upper;
 
-  const ck = `tf:iata:${upper}`;
+  const ck = `tf:iata:tp:${upper}`;
   const hit = await redis.get(ck);
   if (hit) return hit;
 
   const r = await fetch(
-    `${AM_BASE}/v1/reference-data/locations?subType=AIRPORT&keyword=${encodeURIComponent(name)}&page[limit]=1`,
-    { headers: { Authorization: `Bearer ${token}` } }
+    `https://autocomplete.travelpayouts.com/places2?query=${encodeURIComponent(query)}&locale=en&types[]=city&types[]=airport`,
+    { headers: { Accept: "application/json" } }
   );
   if (!r.ok) return null;
-  const d = await r.json();
-  const code = d?.data?.[0]?.iataCode || null;
+  const data = await r.json();
+  const code = Array.isArray(data) ? data[0]?.code : null;
   if (code) await redis.set(ck, code, { ex: 86400 });
   return code;
 }
@@ -64,8 +40,8 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  if (!AM_ID || !AM_SEC) {
-    return res.status(200).json({ fallback: true, reason: "Amadeus not configured" });
+  if (!TP_TOKEN) {
+    return res.status(200).json({ fallback: true, reason: "Travelpayouts not configured" });
   }
 
   const { from, to, date, adults = 1 } = req.body || {};
@@ -73,71 +49,70 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "from, to, and date are required" });
   }
 
-  const ck = `tf:flights:${from}:${to}:${date}:${adults}`;
+  // Cache by route + month (prices don't change day-to-day for this API)
+  const month = date.slice(0, 7);
+  const ck = `tf:flights:tp:${from}:${to}:${month}`;
 
   try {
     const cached = await redis.get(ck);
     if (cached) return res.status(200).json(cached);
 
-    const token = await getToken();
     const [fromCode, toCode] = await Promise.all([
-      cityToIata(from, token),
-      cityToIata(to,   token),
+      cityToIata(from),
+      cityToIata(to),
     ]);
 
     if (!fromCode || !toCode) {
       return res.status(200).json({ fallback: true, reason: "IATA lookup failed" });
     }
 
-    // Fetch up to 50 offers and group by cabin
-    const offerRes = await fetch(
-      `${AM_BASE}/v2/shopping/flight-offers?originLocationCode=${fromCode}&destinationLocationCode=${toCode}&departureDate=${date}&adults=${adults}&max=50&currencyCode=USD`,
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+    const url = `https://api.travelpayouts.com/v1/prices/cheap?origin=${fromCode}&destination=${toCode}&depart_date=${month}&one_way=true&currency=usd&token=${TP_TOKEN}`;
+    const r = await fetch(url);
 
-    if (!offerRes.ok) {
-      const err = await offerRes.json().catch(() => ({}));
-      return res.status(200).json({ fallback: true, reason: err?.errors?.[0]?.detail || `Amadeus ${offerRes.status}` });
+    if (!r.ok) {
+      return res.status(200).json({ fallback: true, reason: `Travelpayouts ${r.status}` });
     }
 
-    const offerData = await offerRes.json();
-    const offers = offerData?.data || [];
-
-    if (!offers.length) {
-      return res.status(200).json({ fallback: true, reason: "No offers found" });
+    const data = await r.json();
+    if (!data.success || !data.data) {
+      return res.status(200).json({ fallback: true, reason: "No price data" });
     }
 
-    // Group cheapest offer per cabin class
-    const byClass = {};
-    for (const offer of offers) {
-      const cabinCode = offer.travelerPricings?.[0]?.fareDetailsBySegment?.[0]?.cabin || "ECONOMY";
-      const price = parseFloat(offer.price?.grandTotal || offer.price?.total || "0");
-      if (!byClass[cabinCode] || price < byClass[cabinCode].price) {
-        const seg = offer.itineraries?.[0]?.segments?.[0] || {};
-        byClass[cabinCode] = {
-          cabin:      cabinCode,
-          label:      CABINS[cabinCode]?.label || cabinCode,
-          kayakCabin: CABINS[cabinCode]?.kayak || "e",
-          order:      CABINS[cabinCode]?.order ?? 99,
-          price,
-          airline:    seg.carrierCode || "",
-          flightNum:  `${seg.carrierCode || ""}${seg.number || ""}`,
-          depart:     seg.departure?.at?.slice(11, 16) || "",
-          arrive:     seg.arrival?.at?.slice(11, 16) || "",
-          stops:      (offer.itineraries?.[0]?.segments?.length || 1) - 1,
-          fromCode,
-          toCode,
-        };
+    // Response is keyed by destination IATA; grab first available
+    const destKey = data.data[toCode] ? toCode : Object.keys(data.data)[0];
+    const destData = data.data[destKey];
+    if (!destData) {
+      return res.status(200).json({ fallback: true, reason: "No flights found" });
+    }
+
+    // Pick cheapest option across all stop counts
+    let cheapest = null;
+    for (const [stops, flight] of Object.entries(destData)) {
+      if (!cheapest || flight.price < cheapest.price) {
+        cheapest = { ...flight, stops: parseInt(stops, 10) };
       }
     }
-
-    const cabins = Object.values(byClass).sort((a, b) => a.order - b.order);
-    if (!cabins.length) {
-      return res.status(200).json({ fallback: true, reason: "No cabin data" });
+    if (!cheapest) {
+      return res.status(200).json({ fallback: true, reason: "No flights found" });
     }
 
+    const economyPrice = cheapest.price * (parseInt(adults, 10) || 1);
+
+    const cabins = CABIN_CLASSES.map((cls, i) => ({
+      cabin:       cls.code,
+      label:       cls.label,
+      kayakCabin:  cls.kayak,
+      order:       i,
+      price:       Math.round(economyPrice * cls.mult),
+      isLivePrice: cls.live,
+      airline:     cheapest.airline || "",
+      depart:      cheapest.departure_at ? cheapest.departure_at.slice(11, 16) : "",
+      stops:       cheapest.stops,
+      fromCode,
+      toCode,
+    }));
+
     const result = { live: true, fromCode, toCode, cabins, fetchedAt: Date.now() };
-    // cache 30 minutes
     await redis.set(ck, result, { ex: 1800 });
     return res.status(200).json(result);
   } catch (err) {
