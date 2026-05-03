@@ -24,6 +24,8 @@ const AFF = {
     `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(dest||"")}&checkin=${checkin}&checkout=${checkout}&group_adults=${travelers}&no_rooms=1&aid=YOURAFFID`,
   expediaHotels: (dest, checkin="", checkout="", travelers=1) =>
     `https://www.expedia.com/Hotel-Search?destination=${encodeURIComponent(dest||"")}&startDate=${checkin}&endDate=${checkout}&adults=${travelers}&affcid=YOURAFFID`,
+  hotelscom: (dest, checkin="", checkout="", travelers=1) =>
+    `https://www.hotels.com/search.do?q-destination=${encodeURIComponent(dest||"")}&q-check-in=${checkin}&q-check-out=${checkout}&q-rooms=1&q-room-0-adults=${travelers}`,
   expediaFlights: (from, to, date="", travelers=1) =>
     `https://www.expedia.com/Flights-Search?flight-type=on&mode=search&trip=oneway&leg1=from:${encodeURIComponent(from||"")},to:${encodeURIComponent(to||"")},departure:${date}TANYT&passengers=adults:${travelers},children:0,infantinlap:Y&affcid=YOURAFFID`,
   kayakCars: (dest, pickup="", dropoff="") => {
@@ -33,6 +35,10 @@ const AFF = {
   },
   kayakFlights: (from, to, date="", travelers=1) =>
     `https://www.kayak.com/flights/${slugify(from)}-${slugify(to)}${date?"/"+date:""}?adults=${travelers}`,
+  rentalcars: (dest, pickup="", dropoff="") =>
+    `https://www.rentalcars.com/SearchResults.do?affiliateCode=YOURAFFID&preflang=en&adplat=search&location=${encodeURIComponent(dest||"")}&d1=${pickup}&d2=${dropoff}`,
+  expediaCars: (dest, pickup="", dropoff="") =>
+    `https://www.expedia.com/Cars/search?location=${encodeURIComponent(dest||"")}&startDate=${pickup}&endDate=${dropoff}`,
   viator: (dest) =>
     `https://www.viator.com/searchResults/all?text=${encodeURIComponent(dest||"")}&pid=YOURAFFID`,
   googleFlights: (from, to, date="") =>
@@ -487,12 +493,14 @@ function HeroSearch({ onSearch, loading }) {
                     <div style={{fontSize:9,fontWeight:700,color:c.textMuted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:2}}>Arrive</div>
                     <input type="date" value={d.dateFrom||""} onChange={e=>upd(i,"dateFrom",e.target.value)}
                       style={{background:"transparent",border:"none",outline:"none",color:c.text,fontSize:13,fontFamily:fontBody,width:"100%",cursor:"pointer"}}/>
+                    {!d.dateFrom && <div style={{color:c.textSubtle,fontSize:10,marginTop:2}}>Date you arrive</div>}
                   </div>
                   <div style={{display:"flex",alignItems:"center",padding:"0 6px",color:c.textSubtle,fontSize:14,flexShrink:0}}>→</div>
                   <div style={{flex:1,padding:"6px 12px 8px",borderLeft:`1px solid ${c.border}`}}>
                     <div style={{fontSize:9,fontWeight:700,color:c.textMuted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:2}}>Leave</div>
                     <input type="date" value={d.dateTo||""} onChange={e=>upd(i,"dateTo",e.target.value)}
                       style={{background:"transparent",border:"none",outline:"none",color:c.text,fontSize:13,fontFamily:fontBody,width:"100%",cursor:"pointer"}}/>
+                    {!d.dateTo && <div style={{color:c.textSubtle,fontSize:10,marginTop:2}}>Date you leave</div>}
                   </div>
                 </div>
                 {dests.length>2
@@ -513,12 +521,14 @@ function HeroSearch({ onSearch, loading }) {
                 <div style={{fontSize:9,fontWeight:700,color:c.textMuted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:2}}>✈️ Depart</div>
                 <input type="date" value={dests[0]?.dateFrom||""} onChange={e=>upd(0,"dateFrom",e.target.value)}
                   style={{background:"transparent",border:"none",outline:"none",color:c.text,fontSize:13,fontFamily:fontBody,width:"100%",cursor:"pointer"}}/>
+                {!dests[0]?.dateFrom && <div style={{color:c.textSubtle,fontSize:10,marginTop:2}}>Your departure date</div>}
               </div>
               <div style={{display:"flex",alignItems:"center",padding:"0 8px",color:c.accentHi,fontSize:16,flexShrink:0,fontWeight:700}}>→</div>
               <div style={{flex:1,padding:"6px 14px 8px",borderLeft:`1px solid ${c.border}`}}>
                 <div style={{fontSize:9,fontWeight:700,color:c.textMuted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:2}}>🏠 Return</div>
                 <input type="date" value={dests[0]?.dateTo||""} onChange={e=>upd(0,"dateTo",e.target.value)}
                   style={{background:"transparent",border:"none",outline:"none",color:c.text,fontSize:13,fontFamily:fontBody,width:"100%",cursor:"pointer"}}/>
+                {!dests[0]?.dateTo && <div style={{color:c.textSubtle,fontSize:10,marginTop:2}}>Your return date</div>}
               </div>
             </div>
           </div>
@@ -927,7 +937,7 @@ function FlightsTab({ form, settings, apiKey }) {
     setLoading(true); setFlights(null);
     try {
       const raw = await askClaude(
-        `Flight expert. Return ONLY a JSON array of 4 realistic flight options. Each object: {"airline":"string","from":"string","to":"string","depart":"HH:MM","arrive":"HH:MM","duration":"Xh Ym","stops":0,"estimatedPrice":000,"refundable":true,"flightNumber":"string"}. Use real airlines that serve this route. Vary airlines, stops (0 or 1), and prices. No markdown, no explanation. IMPORTANT: Return exactly 4 items. Never return an empty array.`,
+        `Flight expert. Return ONLY a JSON array of 4 realistic flight options. Each object: {"airline":"string","from":"string","to":"string","iataFrom":"XXX","iataTo":"YYY","depart":"HH:MM","arrive":"HH:MM","duration":"Xh Ym","stops":0,"estimatedPrice":000,"refundable":true,"flightNumber":"string"}. iataFrom and iataTo are the 3-letter IATA airport codes for the origin and destination. Use real airlines that serve this route. Vary airlines, stops (0 or 1), and prices. No markdown, no explanation. IMPORTANT: Return exactly 4 items. Never return an empty array.`,
         `Flights from ${form.from || "New York"} to ${form.destination}${form.dateFrom ? ` on ${form.dateFrom}` : ""}. ${form.travelers || 2} traveler(s). Travel style: ${form.style || "general"}.`,
         apiKey, 1200
       );
@@ -1031,11 +1041,25 @@ function FlightsTab({ form, settings, apiKey }) {
               <div style={{textAlign:"right"}}>
                 <div style={{color:c.accent,fontWeight:900,fontSize:26,letterSpacing:"-0.03em"}}>~${f.estimatedPrice}</div>
                 <div style={{color:c.textMuted,fontSize:11,margin:"2px 0 4px",fontStyle:"italic"}}>est. per person</div>
-                <div style={{color:f.refundable?c.success:c.danger,fontSize:12,fontWeight:700,margin:"2px 0 12px"}}>{f.refundable?"✓ Refundable":"Non-refundable"}</div>
-                <a href={AFF.googleFlights(f.from||fromCity, f.to||destCity, form.dateFrom)} target="_blank" rel="noopener noreferrer"
-                  style={{display:"inline-block",padding:"10px 22px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800,boxShadow:`0 6px 20px ${c.accentBorder}`,whiteSpace:"nowrap"}}>
-                  Search on Google Flights →
-                </a>
+                <div style={{color:f.refundable?c.success:c.danger,fontSize:12,fontWeight:700,margin:"2px 0 10px"}}>{f.refundable?"✓ Refundable":"Non-refundable"}</div>
+                <div style={{display:"flex",flexDirection:"column",gap:6,alignItems:"flex-end"}}>
+                  <a href={AFF.skyscanner(f.iataFrom||f.from||fromCity, f.iataTo||f.to||destCity, form.dateFrom, form.dateTo, form.travelers)} target="_blank" rel="noopener noreferrer"
+                    style={{display:"inline-block",padding:"9px 20px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:13,fontWeight:800,boxShadow:`0 4px 14px ${c.accentBorder}`,whiteSpace:"nowrap"}}>
+                    Skyscanner →
+                  </a>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
+                    {[
+                      {label:"Google Flights", url:AFF.googleFlights(f.iataFrom||f.from||fromCity, f.iataTo||f.to||destCity, form.dateFrom)},
+                      {label:"Expedia", url:AFF.expediaFlights(f.iataFrom||f.from||fromCity, f.iataTo||f.to||destCity, form.dateFrom, form.travelers)},
+                      {label:"Kayak", url:AFF.kayakFlights(f.iataFrom||f.from||fromCity, f.iataTo||f.to||destCity, form.dateFrom, form.travelers)},
+                    ].map(s => (
+                      <a key={s.label} href={s.url} target="_blank" rel="noopener noreferrer"
+                        style={{padding:"6px 12px",background:c.bg2,border:`1px solid ${c.border}`,borderRadius:8,color:c.textMuted,textDecoration:"none",fontSize:12,fontWeight:600,whiteSpace:"nowrap"}}>
+                        {s.label}
+                      </a>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -1090,7 +1114,7 @@ function HotelsTab({ form, settings, apiKey }) {
         {[
           {name:"Booking.com", url:AFF.bookingHotels(cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers)},
           {name:"Expedia", url:AFF.expediaHotels(cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers)},
-          {name:"Hotels.com", url:`https://www.hotels.com/search.do?q-destination=${encodeURIComponent(cityOnly(form.destination)||"")}&q-check-in=${form.dateFrom||""}&q-check-out=${form.dateTo||""}&q-rooms=1&q-room-0-adults=${form.travelers||2}`},
+          {name:"Hotels.com", url:AFF.hotelscom(cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers)},
           {name:"TripAdvisor", url:`https://www.tripadvisor.com/Search?q=${encodeURIComponent(cityOnly(form.destination||"")+" hotels")}`},
           {name:"Priceline", url:`https://www.priceline.com/relax/in/${encodeURIComponent(cityOnly(form.destination)||"")}`},
         ].map(s => (
@@ -1153,12 +1177,24 @@ function HotelsTab({ form, settings, apiKey }) {
                   </span>
                 ))}
               </div>
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span style={{fontSize:12,fontWeight:700,color:h.refundable?c.success:c.danger}}>{h.refundable?"Free cancellation":"Non-refundable"}</span>
-                <a href={`https://www.booking.com/search.html?ss=${encodeURIComponent(h.name+" "+cityOnly(form.destination))}&checkin=${form.dateFrom||""}&checkout=${form.dateTo||""}&group_adults=${form.travelers||2}&no_rooms=1&aid=YOURAFFID`} target="_blank" rel="noopener noreferrer"
-                  style={{padding:"9px 18px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:13,fontWeight:800,whiteSpace:"nowrap"}}>
-                  Book on Booking.com →
+              <div style={{marginTop:4}}>
+                <span style={{fontSize:12,fontWeight:700,color:h.refundable?c.success:c.danger,display:"block",marginBottom:10}}>{h.refundable?"Free cancellation":"Non-refundable"}</span>
+                <a href={`https://www.booking.com/searchresults.html?ss=${encodeURIComponent(h.name+" "+cityOnly(form.destination))}&checkin=${form.dateFrom||""}&checkout=${form.dateTo||""}&group_adults=${form.travelers||2}&no_rooms=1&aid=YOURAFFID`} target="_blank" rel="noopener noreferrer"
+                  style={{display:"block",textAlign:"center",padding:"9px 14px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:13,fontWeight:800,marginBottom:6}}>
+                  Booking.com →
                 </a>
+                <div style={{display:"flex",gap:5}}>
+                  {[
+                    {label:"Expedia", url:AFF.expediaHotels(h.name+" "+cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers)},
+                    {label:"Hotels.com", url:AFF.hotelscom(h.name+" "+cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers)},
+                    {label:"Kayak", url:`https://www.kayak.com/hotels/${encodeURIComponent(cityOnly(form.destination)||"")}/${form.dateFrom||""}/${form.dateTo||""}/${form.travelers||2}adults`},
+                  ].map(s => (
+                    <a key={s.label} href={s.url} target="_blank" rel="noopener noreferrer"
+                      style={{flex:1,textAlign:"center",padding:"6px 4px",background:c.bg2,border:`1px solid ${c.border}`,borderRadius:8,color:c.textMuted,textDecoration:"none",fontSize:11,fontWeight:600}}>
+                      {s.label}
+                    </a>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -1167,6 +1203,9 @@ function HotelsTab({ form, settings, apiKey }) {
     </div>
   );
 }
+
+// ─── Kayak car-category filter slugs ─────────────────────────────────────────
+const KAYAK_CAR_TYPE = { "Economy":"economy", "Compact SUV":"suv", "Midsize":"intermediate", "Luxury":"luxury" };
 
 // ─── Cars Tab — AI-powered car rental suggestions ─────────────────────────────
 function CarsTab({ form, apiKey }) {
@@ -1219,8 +1258,8 @@ function CarsTab({ form, apiKey }) {
         {[
           {name:"Costco Travel", url:"https://www.costcotravel.com/Rental-Cars", badge:"Save up to 25%"},
           {name:"Kayak", url:AFF.kayakCars(cityOnly(form.destination), form.dateFrom, form.dateTo)},
-          {name:"RentalCars", url:`https://www.rentalcars.com/SearchResults.do?affiliateCode=YOURAFFID&preflang=en&adplat=search&location=${encodeURIComponent(cityOnly(form.destination)||"")}&d1=${form.dateFrom||""}&d2=${form.dateTo||""}`},
-          {name:"Expedia Cars", url:`https://www.expedia.com/Cars/search?location=${encodeURIComponent(cityOnly(form.destination)||"")}&startDate=${form.dateFrom||""}&endDate=${form.dateTo||""}`},
+          {name:"RentalCars", url:AFF.rentalcars(cityOnly(form.destination), form.dateFrom, form.dateTo)},
+          {name:"Expedia Cars", url:AFF.expediaCars(cityOnly(form.destination), form.dateFrom, form.dateTo)},
         ].map(s => (
           <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
             style={{padding:"10px 16px",background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:10,color:c.text,textDecoration:"none",fontSize:13,display:"flex",flexDirection:"column",gap:3,fontFamily:fontBody}}>
@@ -1267,11 +1306,23 @@ function CarsTab({ form, apiKey }) {
                   {car.features.map(f => <span key={f} style={{background:c.bg2,border:`1px solid ${c.border}`,borderRadius:999,padding:"3px 9px",fontSize:11,color:c.textMuted}}>{f}</span>)}
                 </div>
               )}
-              <div style={{color:c.accent,fontWeight:900,fontSize:22,marginBottom:14}}>~${car.estimatedDailyRate}<span style={{color:c.textMuted,fontSize:12,fontWeight:500}}>/day</span></div>
-              <a href={AFF.kayakCars(cityOnly(form.destination), form.dateFrom, form.dateTo)} target="_blank" rel="noopener noreferrer"
-                style={{display:"block",textAlign:"center",padding:"11px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800,whiteSpace:"nowrap"}}>
-                Compare on Kayak →
+              <div style={{color:c.accent,fontWeight:900,fontSize:22,marginBottom:10}}>~${car.estimatedDailyRate}<span style={{color:c.textMuted,fontSize:12,fontWeight:500}}>/day</span></div>
+              <a href={AFF.kayakCars(cityOnly(form.destination), form.dateFrom, form.dateTo) + (KAYAK_CAR_TYPE[car.category] ? `?filter=cabtype_${KAYAK_CAR_TYPE[car.category]}` : "")} target="_blank" rel="noopener noreferrer"
+                style={{display:"block",textAlign:"center",padding:"10px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:13,fontWeight:800,marginBottom:6}}>
+                Kayak →
               </a>
+              <div style={{display:"flex",gap:5}}>
+                {[
+                  {label:"RentalCars", url:AFF.rentalcars(cityOnly(form.destination), form.dateFrom, form.dateTo)},
+                  {label:"Expedia", url:AFF.expediaCars(cityOnly(form.destination), form.dateFrom, form.dateTo)},
+                  {label:"Costco", url:"https://www.costcotravel.com/Rental-Cars"},
+                ].map(s => (
+                  <a key={s.label} href={s.url} target="_blank" rel="noopener noreferrer"
+                    style={{flex:1,textAlign:"center",padding:"6px 4px",background:c.bg2,border:`1px solid ${c.border}`,borderRadius:8,color:c.textMuted,textDecoration:"none",fontSize:11,fontWeight:600}}>
+                    {s.label}
+                  </a>
+                ))}
+              </div>
             </div>
           </div>
         ))}
