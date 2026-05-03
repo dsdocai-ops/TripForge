@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Git Workflow
+
+**Always develop directly on `main`.** Do not create feature branches. Commit and push all changes straight to `main`.
+
 ## Business Goal
 
 **The website must generate profit at near-zero operating cost.** Every technical decision should support this:
