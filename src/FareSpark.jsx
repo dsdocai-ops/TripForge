@@ -481,7 +481,7 @@ function HeroSearch({ onSearch, loading }) {
               Your next trip, fully planned<br/>in 30 seconds.
             </h1>
             <p style={{color:"rgba(255,255,255,0.85)",fontSize:15,margin:0,lineHeight:1.65,maxWidth:520}}>
-              Tell TripForge where you want to go and your budget — our AI builds a complete day-by-day itinerary, finds flights, hotels, and restaurants, all in one place.
+              Tell FareSpark where you want to go and your budget — our AI builds a complete day-by-day itinerary, finds flights, hotels, and restaurants, all in one place.
             </p>
           </div>
           <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
@@ -656,7 +656,7 @@ function ItineraryTab({ tripData, loading, form, apiKey }) {
         <div style={{width:"100%",maxWidth:320,margin:"0 auto",height:4,background:c.border,borderRadius:4,overflow:"hidden"}}>
           <div style={{height:"100%",background:`linear-gradient(90deg,${c.accent},${c.accentHi})`,borderRadius:4,animation:"progress 14s linear forwards"}}/>
         </div>
-        <div style={{color:c.textMuted,fontSize:13,marginTop:14}}>TripForge is crafting your {form.style} trip to <strong style={{color:c.text}}>{form.destination}</strong></div>
+        <div style={{color:c.textMuted,fontSize:13,marginTop:14}}>FareSpark is crafting your {form.style} trip to <strong style={{color:c.text}}>{form.destination}</strong></div>
       </div>
       {[1,2,3].map(i=><div key={i} style={{background:c.surface,borderRadius:16,padding:24,display:"flex",flexDirection:"column",gap:12}}><Skeleton h="20px" w="40%"/><Skeleton h="14px"/><Skeleton h="14px" w="70%"/></div>)}
     </div>
@@ -1295,7 +1295,11 @@ function HotelsTab({ form, settings, apiKey }) {
             ? filtered.reduce((bi, hh, ii) => (hh.rating||0) > (filtered[bi].rating||0) ? ii : bi, 0)
             : -1;
           const isTopRated = !isLiveHotels && i === bestRatedIdx && !isBestDeal;
-          const bookUrl = AFF.bookingHotels(cityOnly(form.destination), form.dateFrom||"", form.dateTo||"", form.travelers||2, h.name);
+          // Live: use Hotellook deep link returned by the API (exact hotel + dates)
+          // AI fallback: Booking.com search with hotel name
+          const bookUrl = (isLiveHotels && h.bookingUrl)
+            ? h.bookingUrl
+            : AFF.bookingHotels(cityOnly(form.destination), form.dateFrom||"", form.dateTo||"", form.travelers||2, h.name);
           const priceLabel = isLiveHotels ? `$${h.pricePerNight}` : `~$${h.pricePerNight}`;
           const totalLabel = hotelNights ? (isLiveHotels ? `$${h.priceTotal || h.pricePerNight * hotelNights} total` : `~$${h.pricePerNight * hotelNights} total`) : null;
           return (
@@ -1345,7 +1349,7 @@ function HotelsTab({ form, settings, apiKey }) {
                   style={{display:"block",textAlign:"center",padding:"11px 14px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800}}>
                   Book Now →
                 </a>
-                <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"center"}}>via Booking.com · {isLiveHotels ? "live rates" : "confirm live pricing on site"}</div>
+                <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"center"}}>{isLiveHotels ? "via Hotellook · live rates · compares all booking sites" : "via Booking.com · confirm live pricing on site"}</div>
               </div>
             </div>
           );
@@ -1599,14 +1603,14 @@ function LandingSections({ onSearch, loading }) {
 
   const steps = [
     { num:"01", icon:"✏️", title:"Tell us your trip", desc:"Enter your destination, travel dates, budget, and travel style. Takes about 30 seconds." },
-    { num:"02", icon:"⚡", title:"AI builds your plan", desc:"TripForge generates a full day-by-day itinerary with real places, real timings, and real costs." },
+    { num:"02", icon:"⚡", title:"AI builds your plan", desc:"FareSpark generates a full day-by-day itinerary with real places, real timings, and real costs." },
     { num:"03", icon:"🎯", title:"Book everything in one place", desc:"Flights, hotels, and activities are all linked. Click to book. Done." },
   ];
 
   const features = [
     { emoji:"📅", title:"A complete itinerary, not a list of ideas", desc:"Every day is mapped out hour by hour with specific real places — not generic suggestions like 'visit a museum'." },
     { emoji:"💰", title:"A budget that actually adds up", desc:"See exactly what flights, hotels, food, and activities will cost before you book a single thing." },
-    { emoji:"✈️", title:"Flights and hotels compared for you", desc:"TripForge pulls options from Skyscanner, Booking.com, and Expedia so you never need to open five tabs." },
+    { emoji:"✈️", title:"Flights and hotels compared for you", desc:"FareSpark pulls options from Skyscanner, Booking.com, and Expedia so you never need to open five tabs." },
     { emoji:"🧳", title:"A packing list built for your trip", desc:"Tailored to your destination, dates, and weather — not a generic checklist." },
     { emoji:"🍽️", title:"Restaurant picks from a local perspective", desc:"Specific restaurants in specific neighborhoods, with the dish you should actually order." },
     { emoji:"🖨️", title:"Printable and shareable", desc:"One tap to get a clean print-ready itinerary to share with your travel companions." },
@@ -1693,8 +1697,8 @@ function LandingSections({ onSearch, loading }) {
         {/* Honest prompt — no fake reviews */}
         <div style={{maxWidth:560,margin:"0 auto",textAlign:"center",padding:"32px 28px",background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:20}}>
           <div style={{fontSize:36,marginBottom:14}}>✈️</div>
-          <div style={{color:c.text,fontWeight:700,fontSize:18,marginBottom:8,letterSpacing:"-0.02em"}}>Be one of the first to try TripForge</div>
-          <p style={{color:c.textMuted,fontSize:14,lineHeight:1.7,margin:"0 0 20px"}}>TripForge is brand new. Plan your trip, see what it builds, and let us know what you think. Your feedback shapes what gets built next.</p>
+          <div style={{color:c.text,fontWeight:700,fontSize:18,marginBottom:8,letterSpacing:"-0.02em"}}>Be one of the first to try FareSpark</div>
+          <p style={{color:c.textMuted,fontSize:14,lineHeight:1.7,margin:"0 0 20px"}}>FareSpark is brand new. Plan your trip, see what it builds, and let us know what you think. Your feedback shapes what gets built next.</p>
           <button onClick={scrollToForm}
             style={{display:"inline-flex",alignItems:"center",gap:8,padding:"12px 24px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,color:"#fff",border:"none",borderRadius:12,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:fontBody}}>
             Try it now — it&apos;s free →
@@ -1723,7 +1727,7 @@ function LandingSections({ onSearch, loading }) {
           Plan My Trip Free →
         </button>
         <div style={{color:"rgba(255,255,255,0.65)",fontSize:12,marginTop:14,fontWeight:500}}>
-          Free to plan · Affiliate links help keep TripForge running
+          Free to plan · Affiliate links help keep FareSpark running
         </div>
       </div>
 
@@ -1732,7 +1736,7 @@ function LandingSections({ onSearch, loading }) {
 }
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
-export default function TripForge() {
+export default function FareSpark() {
   const { c, dark, font, fontBody } = useTokens();
   const [, toggleTheme] = useTheme();
   const apiKey = SITE_API_KEY; // Key is set at top of file — no user input needed
@@ -1907,7 +1911,7 @@ export default function TripForge() {
             <div style={{width:36,height:36,borderRadius:10,background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 4px 12px ${c.accentBorder}`}}>
               <Icon name="globe" size={18} color="#fff"/>
             </div>
-            <span style={{fontSize:18,fontWeight:800,letterSpacing:"-0.04em",color:c.text,fontFamily:font}}>TripForge</span>
+            <span style={{fontSize:18,fontWeight:800,letterSpacing:"-0.04em",color:c.text,fontFamily:font}}>FareSpark</span>
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             <button onClick={()=>window.scrollTo({top:0,behavior:"smooth"})}
@@ -1942,8 +1946,8 @@ export default function TripForge() {
             <div className="print-only" style={{paddingBottom:20,marginBottom:28,borderBottom:"2.5px solid #e8520a"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                 <div>
-                  <div style={{fontFamily:'"Sora",system-ui,sans-serif',fontSize:28,fontWeight:900,color:"#e8520a",letterSpacing:"-0.04em",lineHeight:1}}>TripForge</div>
-                  <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"#6b6258",marginTop:5}}>AI Travel Planner · tripforge.app</div>
+                  <div style={{fontFamily:'"Sora",system-ui,sans-serif',fontSize:28,fontWeight:900,color:"#e8520a",letterSpacing:"-0.04em",lineHeight:1}}>FareSpark</div>
+                  <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"#6b6258",marginTop:5}}>AI Travel Planner · farespark.app</div>
                 </div>
                 <div style={{textAlign:"right"}}>
                   <div style={{fontSize:22,fontWeight:800,color:"#12100e",letterSpacing:"-0.03em"}}>{tripData?.destination || form.destination}</div>
@@ -1989,7 +1993,7 @@ export default function TripForge() {
                 <div style={{width:28,height:28,borderRadius:8,background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,display:"flex",alignItems:"center",justifyContent:"center"}}>
                   <Icon name="globe" size={14} color="#fff"/>
                 </div>
-                <span style={{color:c.text,fontWeight:800,fontSize:15,fontFamily:font}}>TripForge</span>
+                <span style={{color:c.text,fontWeight:800,fontSize:15,fontFamily:font}}>FareSpark</span>
               </div>
               <p style={{color:c.textSubtle,fontSize:12,lineHeight:1.6,maxWidth:280,margin:0}}>
                 AI-powered travel planning. Turn a destination and a budget into a complete trip plan in 30 seconds.
@@ -2011,8 +2015,8 @@ export default function TripForge() {
             </div>
           </div>
           <div style={{borderTop:`1px solid ${c.border}`,paddingTop:16,display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-            <span style={{color:c.textSubtle,fontSize:12}}>© 2026 TripForge. All rights reserved.</span>
-            <span style={{color:c.textSubtle,fontSize:11}}>AI-estimated prices for reference only — always confirm live pricing on provider sites. Some links are affiliate links that help keep TripForge free.</span>
+            <span style={{color:c.textSubtle,fontSize:12}}>© 2026 FareSpark. All rights reserved.</span>
+            <span style={{color:c.textSubtle,fontSize:11}}>AI-estimated prices for reference only — always confirm live pricing on provider sites. Some links are affiliate links that help keep FareSpark free.</span>
           </div>
         </footer>
 
@@ -2023,7 +2027,7 @@ export default function TripForge() {
           {[...Array(10)].map((_,i)=>(
             <div key={i} style={{display:"flex",gap:"80px",whiteSpace:"nowrap"}}>
               {[...Array(5)].map((_,j)=>(
-                <span key={j} style={{fontSize:30,fontWeight:900,color:"rgba(232,82,10,0.08)",fontFamily:'"Sora",system-ui,sans-serif',letterSpacing:"-0.02em",userSelect:"none"}}>TripForge</span>
+                <span key={j} style={{fontSize:30,fontWeight:900,color:"rgba(232,82,10,0.08)",fontFamily:'"Sora",system-ui,sans-serif',letterSpacing:"-0.02em",userSelect:"none"}}>FareSpark</span>
               ))}
             </div>
           ))}
@@ -2031,7 +2035,7 @@ export default function TripForge() {
 
         {/* Print footer */}
         <div className="print-only print-pg-footer" style={{position:"fixed",bottom:16,left:0,right:0,textAlign:"center",fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"#b5ada4"}}>
-          TripForge AI Travel Planner · tripforge.app · Prices are AI estimates — verify before booking
+          FareSpark AI Travel Planner · farespark.app · Prices are AI estimates — verify before booking
         </div>
       </div>
     </>

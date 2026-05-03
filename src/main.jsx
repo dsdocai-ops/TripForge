@@ -1,9 +1,9 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import TripForge from './TripForge'
+import FareSpark from './FareSpark'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <TripForge />
+    <FareSpark />
   </React.StrictMode>
 )

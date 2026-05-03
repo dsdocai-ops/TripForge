@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 npm run dev      # Start Vite dev server (localhost:5173)
-npm run build    # Fix smart-quotes in TripForge.jsx, then build to dist/
+npm run build    # Fix smart-quotes in FareSpark.jsx, then build to dist/
 npm run preview  # Preview the production build locally
 ```
 
@@ -26,7 +26,7 @@ There is no test suite and no linter configured.
 
 ## Architecture
 
-**Single-file React SPA** — virtually all UI and logic lives in `src/TripForge.jsx` (~1600 lines). There is intentionally no component splitting across files.
+**Single-file React SPA** — virtually all UI and logic lives in `src/FareSpark.jsx` (~1600 lines). There is intentionally no component splitting across files.
 
 **Deployment target: Vercel.** The `api/claude.js` file is a Vercel serverless function that acts as a proxy between the browser and the Anthropic API. It keeps `ANTHROPIC_API_KEY` off the client. `VITE_PROXY_URL=/api/claude` in `.env` tells the frontend to route through this proxy.
 
@@ -42,7 +42,7 @@ Browser → /api/claude (Vercel function)
 
 The frontend also maintains a **sessionStorage cache** (`sGet`/`sSet`/`sCacheKey`) so the same tab never re-fetches data for a destination it already loaded this session.
 
-### Key sections of TripForge.jsx
+### Key sections of FareSpark.jsx
 
 | Lines (approx) | Section |
 |---|---|
@@ -75,4 +75,4 @@ All affiliate placeholders use `YOURAFFID`. Search for this string to find every
 
 ### Build quirk
 
-`npm run build` runs a Node script before Vite to replace curly/smart quotes in `TripForge.jsx` with straight quotes. This prevents JSX parse errors if the file is edited in an editor that auto-converts quotes.
+`npm run build` runs a Node script before Vite to replace curly/smart quotes in `FareSpark.jsx` with straight quotes. This prevents JSX parse errors if the file is edited in an editor that auto-converts quotes.

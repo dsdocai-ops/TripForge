@@ -72,6 +72,8 @@ export default async function handler(req, res) {
       const name = typeof nameRaw === "object"
         ? (nameRaw.en || Object.values(nameRaw)[0] || "")
         : (nameRaw || "");
+      // Deep link to the specific hotel on Hotellook with dates + affiliate marker
+      const bookingUrl = `https://search.hotellook.com/?marker=${TP_TOKEN}&hotel=${h.hotelId}&checkIn=${checkin}&checkOut=${checkout}&adults=${adults}&lang=en`;
       return {
         hotelId: h.hotelId,
         name,
@@ -80,6 +82,7 @@ export default async function handler(req, res) {
         priceTotal: Math.round(h.priceFrom * nights),
         neighborhood: h.location?.name || loc.name || destination,
         photoUrl: h.photoUrl || null,
+        bookingUrl,
       };
     });
 
