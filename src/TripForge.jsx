@@ -487,12 +487,14 @@ function HeroSearch({ onSearch, loading }) {
                     <div style={{fontSize:9,fontWeight:700,color:c.textMuted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:2}}>Arrive</div>
                     <input type="date" value={d.dateFrom||""} onChange={e=>upd(i,"dateFrom",e.target.value)}
                       style={{background:"transparent",border:"none",outline:"none",color:c.text,fontSize:13,fontFamily:fontBody,width:"100%",cursor:"pointer"}}/>
+                    {!d.dateFrom && <div style={{color:c.textSubtle,fontSize:10,marginTop:2}}>Date you arrive</div>}
                   </div>
                   <div style={{display:"flex",alignItems:"center",padding:"0 6px",color:c.textSubtle,fontSize:14,flexShrink:0}}>→</div>
                   <div style={{flex:1,padding:"6px 12px 8px",borderLeft:`1px solid ${c.border}`}}>
                     <div style={{fontSize:9,fontWeight:700,color:c.textMuted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:2}}>Leave</div>
                     <input type="date" value={d.dateTo||""} onChange={e=>upd(i,"dateTo",e.target.value)}
                       style={{background:"transparent",border:"none",outline:"none",color:c.text,fontSize:13,fontFamily:fontBody,width:"100%",cursor:"pointer"}}/>
+                    {!d.dateTo && <div style={{color:c.textSubtle,fontSize:10,marginTop:2}}>Date you leave</div>}
                   </div>
                 </div>
                 {dests.length>2
@@ -513,12 +515,14 @@ function HeroSearch({ onSearch, loading }) {
                 <div style={{fontSize:9,fontWeight:700,color:c.textMuted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:2}}>✈️ Depart</div>
                 <input type="date" value={dests[0]?.dateFrom||""} onChange={e=>upd(0,"dateFrom",e.target.value)}
                   style={{background:"transparent",border:"none",outline:"none",color:c.text,fontSize:13,fontFamily:fontBody,width:"100%",cursor:"pointer"}}/>
+                {!dests[0]?.dateFrom && <div style={{color:c.textSubtle,fontSize:10,marginTop:2}}>Your departure date</div>}
               </div>
               <div style={{display:"flex",alignItems:"center",padding:"0 8px",color:c.accentHi,fontSize:16,flexShrink:0,fontWeight:700}}>→</div>
               <div style={{flex:1,padding:"6px 14px 8px",borderLeft:`1px solid ${c.border}`}}>
                 <div style={{fontSize:9,fontWeight:700,color:c.textMuted,letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:2}}>🏠 Return</div>
                 <input type="date" value={dests[0]?.dateTo||""} onChange={e=>upd(0,"dateTo",e.target.value)}
                   style={{background:"transparent",border:"none",outline:"none",color:c.text,fontSize:13,fontFamily:fontBody,width:"100%",cursor:"pointer"}}/>
+                {!dests[0]?.dateTo && <div style={{color:c.textSubtle,fontSize:10,marginTop:2}}>Your return date</div>}
               </div>
             </div>
           </div>
