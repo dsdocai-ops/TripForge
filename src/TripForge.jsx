@@ -1032,9 +1032,9 @@ function FlightsTab({ form, settings, apiKey }) {
                 <div style={{color:c.accent,fontWeight:900,fontSize:26,letterSpacing:"-0.03em"}}>~${f.estimatedPrice}</div>
                 <div style={{color:c.textMuted,fontSize:11,margin:"2px 0 4px",fontStyle:"italic"}}>est. per person</div>
                 <div style={{color:f.refundable?c.success:c.danger,fontSize:12,fontWeight:700,margin:"2px 0 12px"}}>{f.refundable?"✓ Refundable":"Non-refundable"}</div>
-                <a href={AFF.googleFlights(f.from||fromCity, f.to||destCity, form.dateFrom)} target="_blank" rel="noopener noreferrer"
+                <a href={AFF.skyscanner(f.from||fromCity, f.to||destCity, form.dateFrom, form.dateTo, form.travelers)} target="_blank" rel="noopener noreferrer"
                   style={{display:"inline-block",padding:"10px 22px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800,boxShadow:`0 6px 20px ${c.accentBorder}`,whiteSpace:"nowrap"}}>
-                  Search on Google Flights →
+                  Book on Skyscanner →
                 </a>
               </div>
             </div>
@@ -1155,7 +1155,7 @@ function HotelsTab({ form, settings, apiKey }) {
               </div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                 <span style={{fontSize:12,fontWeight:700,color:h.refundable?c.success:c.danger}}>{h.refundable?"Free cancellation":"Non-refundable"}</span>
-                <a href={`https://www.booking.com/search.html?ss=${encodeURIComponent(h.name+" "+cityOnly(form.destination))}&checkin=${form.dateFrom||""}&checkout=${form.dateTo||""}&group_adults=${form.travelers||2}&no_rooms=1&aid=YOURAFFID`} target="_blank" rel="noopener noreferrer"
+                <a href={`https://www.booking.com/searchresults.html?ss=${encodeURIComponent(h.name+" "+cityOnly(form.destination))}&checkin=${form.dateFrom||""}&checkout=${form.dateTo||""}&group_adults=${form.travelers||2}&no_rooms=1&aid=YOURAFFID`} target="_blank" rel="noopener noreferrer"
                   style={{padding:"9px 18px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:13,fontWeight:800,whiteSpace:"nowrap"}}>
                   Book on Booking.com →
                 </a>
@@ -1167,6 +1167,9 @@ function HotelsTab({ form, settings, apiKey }) {
     </div>
   );
 }
+
+// ─── Kayak car-category filter slugs ─────────────────────────────────────────
+const KAYAK_CAR_TYPE = { "Economy":"economy", "Compact SUV":"suv", "Midsize":"intermediate", "Luxury":"luxury" };
 
 // ─── Cars Tab — AI-powered car rental suggestions ─────────────────────────────
 function CarsTab({ form, apiKey }) {
@@ -1268,7 +1271,7 @@ function CarsTab({ form, apiKey }) {
                 </div>
               )}
               <div style={{color:c.accent,fontWeight:900,fontSize:22,marginBottom:14}}>~${car.estimatedDailyRate}<span style={{color:c.textMuted,fontSize:12,fontWeight:500}}>/day</span></div>
-              <a href={AFF.kayakCars(cityOnly(form.destination), form.dateFrom, form.dateTo)} target="_blank" rel="noopener noreferrer"
+              <a href={AFF.kayakCars(cityOnly(form.destination), form.dateFrom, form.dateTo) + (KAYAK_CAR_TYPE[car.category] ? `?filter=cabtype_${KAYAK_CAR_TYPE[car.category]}` : "")} target="_blank" rel="noopener noreferrer"
                 style={{display:"block",textAlign:"center",padding:"11px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800,whiteSpace:"nowrap"}}>
                 Compare on Kayak →
               </a>
