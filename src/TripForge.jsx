@@ -28,17 +28,22 @@ const AFF = {
     `https://www.hotels.com/search.do?q-destination=${encodeURIComponent(dest||"")}&q-check-in=${checkin}&q-check-out=${checkout}&q-rooms=1&q-room-0-adults=${travelers}`,
   expediaFlights: (from, to, date="", travelers=1) =>
     `https://www.expedia.com/Flights-Search?flight-type=on&mode=search&trip=oneway&leg1=from:${encodeURIComponent(from||"")},to:${encodeURIComponent(to||"")},departure:${date}TANYT&passengers=adults:${travelers},children:0,infantinlap:Y&affcid=YOURAFFID`,
-  kayakCars: (dest, pickup="", dropoff="") => {
-    const loc = slugify(dest||"");
+  kayakCars: (iataOrCity, pickup="", dropoff="", carType="") => {
+    const loc = (iataOrCity||"").toUpperCase().length === 3 ? iataOrCity.toUpperCase() : slugify(iataOrCity||"");
     const base = `https://www.kayak.com/cars/${loc}`;
-    return (pickup && dropoff) ? `${base}/${pickup}/${dropoff}` : base;
+    const dated = (pickup && dropoff) ? `${base}/${pickup}/${dropoff}` : base;
+    return carType ? `${dated}?sort=price_a&filter=cabtype_${carType}` : `${dated}?sort=price_a`;
   },
   kayakFlights: (from, to, date="", travelers=1) =>
     `https://www.kayak.com/flights/${slugify(from)}-${slugify(to)}${date?"/"+date:""}?adults=${travelers}`,
-  rentalcars: (dest, pickup="", dropoff="") =>
-    `https://www.rentalcars.com/SearchResults.do?affiliateCode=YOURAFFID&preflang=en&adplat=search&location=${encodeURIComponent(dest||"")}&d1=${pickup}&d2=${dropoff}`,
-  expediaCars: (dest, pickup="", dropoff="") =>
-    `https://www.expedia.com/Cars/search?location=${encodeURIComponent(dest||"")}&startDate=${pickup}&endDate=${dropoff}`,
+  rentalcars: (dest, pickup="", dropoff="", carType="") => {
+    const base = `https://www.rentalcars.com/SearchResults.do?affiliateCode=YOURAFFID&preflang=en&adplat=search&location=${encodeURIComponent(dest||"")}&d1=${pickup}&d2=${dropoff}`;
+    return carType ? `${base}&carType=${carType}` : base;
+  },
+  expediaCars: (dest, pickup="", dropoff="", carType="") => {
+    const base = `https://www.expedia.com/Cars/search?location=${encodeURIComponent(dest||"")}&startDate=${pickup}&endDate=${dropoff}&affcid=YOURAFFID`;
+    return carType ? `${base}&carType=${carType}` : base;
+  },
   viator: (dest) =>
     `https://www.viator.com/searchResults/all?text=${encodeURIComponent(dest||"")}&pid=YOURAFFID`,
   googleFlights: (from, to, date="") =>
@@ -1197,8 +1202,10 @@ function HotelsTab({ form, settings, apiKey }) {
   );
 }
 
-// ─── Kayak car-category filter slugs ─────────────────────────────────────────
-const KAYAK_CAR_TYPE = { "Economy":"economy", "Compact SUV":"suv", "Midsize":"intermediate", "Luxury":"luxury" };
+// ─── Car category → site-specific filter values ──────────────────────────────
+const KAYAK_CAR_TYPE     = { "Economy":"economy", "Compact SUV":"suv", "Midsize":"intermediate", "Luxury":"luxury" };
+const RENTALCARS_TYPE    = { "Economy":"ECONOMY", "Compact SUV":"SUV", "Midsize":"INTERMEDIATE", "Luxury":"LUXURY" };
+const EXPEDIA_CAR_TYPE   = { "Economy":"economy", "Compact SUV":"suv", "Midsize":"midsize",      "Luxury":"luxury" };
 
 // ─── Cars Tab — AI-powered car rental suggestions ─────────────────────────────
 function CarsTab({ form, apiKey }) {
@@ -1217,7 +1224,7 @@ function CarsTab({ form, apiKey }) {
         ? Math.max(1, Math.round((new Date(form.dateTo) - new Date(form.dateFrom)) / 864e5))
         : 5;
       const raw = await askClaude(
-        `Car rental data expert. Return ONLY a JSON array of 4 rental options. Strict rules: (1) example: a specific real car model commonly available at this destination (e.g. "Toyota Corolla", "Hyundai Tucson", "Ford Mustang"). (2) estimatedDailyRate: current market rates in USD — Economy $25-55, Compact SUV $45-85, Midsize $35-70, Luxury $75-180 — adjust upward for tourist-heavy or expensive destinations. (3) features: 2-3 accurate features for this category (choose from: Automatic, Manual, Air conditioning, GPS available, Unlimited mileage, Child seat available, Bluetooth, Hybrid). (4) recommended: mark the single best value-for-money option true. Each: {"category":"Economy"|"Compact SUV"|"Midsize"|"Luxury","example":"string","estimatedDailyRate":number,"features":["string"],"recommended":boolean,"supplier":"string (e.g. Enterprise, Hertz, Avis, Budget, Sixt)"}. No markdown. Return exactly 4 items.`,
+        `Car rental data expert. Return ONLY a JSON array of 4 rental options. Strict rules: (1) example: a specific real car model commonly available at this destination (e.g. "Toyota Corolla", "Hyundai Tucson", "Ford Mustang"). (2) estimatedDailyRate: current market rates in USD — Economy $25-55, Compact SUV $45-85, Midsize $35-70, Luxury $75-180 — adjust upward for tourist-heavy or expensive destinations. (3) features: 2-3 accurate features for this category (choose from: Automatic, Manual, Air conditioning, GPS available, Unlimited mileage, Child seat available, Bluetooth, Hybrid). (4) recommended: mark the single best value-for-money option true. (5) iataAirport: the 3-letter IATA code of the nearest major airport where car rentals are available (e.g. "CDG" for Paris, "JFK" for New York, "LHR" for London). Each: {"category":"Economy"|"Compact SUV"|"Midsize"|"Luxury","example":"string","estimatedDailyRate":number,"features":["string"],"recommended":boolean,"supplier":"string (e.g. Enterprise, Hertz, Avis, Budget, Sixt)","iataAirport":"XXX"}. No markdown. Return exactly 4 items.`,
         `Car rentals in ${form.destination} for ${nights} days. Budget: $${form.budget || 3000} total for ${form.travelers || 2} traveler(s). Style: ${form.style || "general"}.`,
         apiKey, 800
       );
@@ -1250,7 +1257,7 @@ function CarsTab({ form, apiKey }) {
       <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
         {[
           {name:"Costco Travel", url:"https://www.costcotravel.com/Rental-Cars", badge:"Save up to 25%"},
-          {name:"Kayak", url:AFF.kayakCars(cityOnly(form.destination), form.dateFrom, form.dateTo)},
+          {name:"Kayak", url:AFF.kayakCars((Array.isArray(cars)&&cars[0]?.iataAirport)||cityOnly(form.destination), form.dateFrom, form.dateTo)},
           {name:"RentalCars", url:AFF.rentalcars(cityOnly(form.destination), form.dateFrom, form.dateTo)},
           {name:"Expedia Cars", url:AFF.expediaCars(cityOnly(form.destination), form.dateFrom, form.dateTo)},
         ].map(s => (
@@ -1284,7 +1291,11 @@ function CarsTab({ form, apiKey }) {
         {Array.isArray(cars) && [...cars]
           .sort((a, b) => (b.recommended?1:0) - (a.recommended?1:0) || a.estimatedDailyRate - b.estimatedDailyRate)
           .map((car, i) => {
-            const bookUrl = AFF.kayakCars(cityOnly(form.destination), form.dateFrom, form.dateTo) + (KAYAK_CAR_TYPE[car.category] ? `?filter=cabtype_${KAYAK_CAR_TYPE[car.category]}` : "");
+            const iata = car.iataAirport;
+            const kayakUrl = AFF.kayakCars(iata || cityOnly(form.destination), form.dateFrom, form.dateTo, KAYAK_CAR_TYPE[car.category]);
+            const rcUrl    = AFF.rentalcars(cityOnly(form.destination), form.dateFrom, form.dateTo, RENTALCARS_TYPE[car.category]);
+            const bookUrl  = iata ? kayakUrl : rcUrl;
+            const bookSite = iata ? "Kayak" : "RentalCars.com";
             return (
               <div key={i} style={{background:c.surface,border:`1.5px solid ${car.recommended?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden"}}>
                 {car.recommended && <div style={{background:c.accent,padding:"5px 12px",fontSize:10,fontWeight:800,color:"#fff",letterSpacing:"0.08em",textAlign:"center"}}>★ BEST VALUE</div>}
@@ -1308,7 +1319,7 @@ function CarsTab({ form, apiKey }) {
                     style={{display:"block",textAlign:"center",padding:"11px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800}}>
                     Book Now →
                   </a>
-                  <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"center"}}>via Kayak</div>
+                  <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"center"}}>via {bookSite}</div>
                 </div>
               </div>
             );
