@@ -927,7 +927,7 @@ function FlightsTab({ form, settings, apiKey }) {
     setLoading(true); setFlights(null);
     try {
       const raw = await askClaude(
-        `Flight expert. Return ONLY a JSON array of 4 realistic flight options. Each object: {"airline":"string","from":"string","to":"string","depart":"HH:MM","arrive":"HH:MM","duration":"Xh Ym","stops":0,"estimatedPrice":000,"refundable":true,"flightNumber":"string"}. Use real airlines that serve this route. Vary airlines, stops (0 or 1), and prices. No markdown, no explanation. IMPORTANT: Return exactly 4 items. Never return an empty array.`,
+        `Flight expert. Return ONLY a JSON array of 4 realistic flight options. Each object: {"airline":"string","from":"string","to":"string","iataFrom":"XXX","iataTo":"YYY","depart":"HH:MM","arrive":"HH:MM","duration":"Xh Ym","stops":0,"estimatedPrice":000,"refundable":true,"flightNumber":"string"}. iataFrom and iataTo are the 3-letter IATA airport codes for the origin and destination. Use real airlines that serve this route. Vary airlines, stops (0 or 1), and prices. No markdown, no explanation. IMPORTANT: Return exactly 4 items. Never return an empty array.`,
         `Flights from ${form.from || "New York"} to ${form.destination}${form.dateFrom ? ` on ${form.dateFrom}` : ""}. ${form.travelers || 2} traveler(s). Travel style: ${form.style || "general"}.`,
         apiKey, 1200
       );
@@ -1032,7 +1032,7 @@ function FlightsTab({ form, settings, apiKey }) {
                 <div style={{color:c.accent,fontWeight:900,fontSize:26,letterSpacing:"-0.03em"}}>~${f.estimatedPrice}</div>
                 <div style={{color:c.textMuted,fontSize:11,margin:"2px 0 4px",fontStyle:"italic"}}>est. per person</div>
                 <div style={{color:f.refundable?c.success:c.danger,fontSize:12,fontWeight:700,margin:"2px 0 12px"}}>{f.refundable?"✓ Refundable":"Non-refundable"}</div>
-                <a href={AFF.skyscanner(f.from||fromCity, f.to||destCity, form.dateFrom, form.dateTo, form.travelers)} target="_blank" rel="noopener noreferrer"
+                <a href={AFF.skyscanner(f.iataFrom||f.from||fromCity, f.iataTo||f.to||destCity, form.dateFrom, form.dateTo, form.travelers)} target="_blank" rel="noopener noreferrer"
                   style={{display:"inline-block",padding:"10px 22px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800,boxShadow:`0 6px 20px ${c.accentBorder}`,whiteSpace:"nowrap"}}>
                   Book on Skyscanner →
                 </a>
