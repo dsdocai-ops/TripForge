@@ -1059,9 +1059,10 @@ function FlightsTab({ form, settings, apiKey }) {
                   </div>
                 </div>
                 <div style={{textAlign:"right"}}>
+                  <div style={{color:c.textMuted,fontSize:11,marginBottom:2,fontWeight:600}}>{f.bookingClass||"Economy"} · {f.stops===0?"Nonstop":f.stops===1?"1 stop":`${f.stops} stops`}</div>
                   <div style={{color:c.accent,fontWeight:900,fontSize:26,letterSpacing:"-0.03em"}}>~${f.estimatedPrice}</div>
-                  <div style={{color:c.textMuted,fontSize:11,margin:"2px 0 2px",fontStyle:"italic"}}>est. per person · {f.bookingClass||"Economy"}</div>
-                  <div style={{color:f.refundable?c.success:c.danger,fontSize:12,fontWeight:700,margin:"2px 0 12px"}}>{f.refundable?"✓ Refundable":"Non-refundable"}</div>
+                  <div style={{color:c.textMuted,fontSize:10,margin:"2px 0 2px",fontStyle:"italic"}}>rough guide · live prices on site</div>
+                  <div style={{color:f.refundable?c.success:c.danger,fontSize:12,fontWeight:700,margin:"4px 0 12px"}}>{f.refundable?"✓ Refundable":"Non-refundable"}</div>
                   <a href={bookUrl} target="_blank" rel="noopener noreferrer"
                     style={{display:"inline-flex",alignItems:"center",gap:8,padding:"11px 22px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800,boxShadow:`0 6px 20px ${c.accentBorder}`,whiteSpace:"nowrap"}}>
                     Book Now →
@@ -1166,7 +1167,7 @@ function HotelsTab({ form, settings, apiKey }) {
           const isBestDeal = i === 0;
           const bestRatedIdx = filtered.reduce((bi, hh, ii) => (hh.rating||0) > (filtered[bi].rating||0) ? ii : bi, 0);
           const isTopRated = i === bestRatedIdx && !isBestDeal;
-          const bookUrl = AFF.trivago(h.name, cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers||2);
+          const bookUrl = `https://www.google.com/travel/hotels?q=${encodeURIComponent(h.name+" "+cityOnly(form.destination))}&checkin=${form.dateFrom||""}&checkout=${form.dateTo||""}&adults=${form.travelers||2}`;
           return (
             <div key={i} style={{background:c.surface,border:`1.5px solid ${isBestDeal?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden"}}>
               {isBestDeal && <div style={{background:c.accent,padding:"7px 18px",fontSize:10,fontWeight:800,color:"#fff",letterSpacing:"0.1em",textAlign:"center"}}>★ BEST DEAL</div>}
@@ -1200,7 +1201,7 @@ function HotelsTab({ form, settings, apiKey }) {
                   style={{display:"block",textAlign:"center",padding:"11px 14px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800}}>
                   Book Now →
                 </a>
-                <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"center"}}>via Trivago · compares 400+ booking sites</div>
+                <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"center"}}>via Google Hotels · live prices from all sites</div>
               </div>
             </div>
           );
@@ -1299,11 +1300,9 @@ function CarsTab({ form, apiKey }) {
         {Array.isArray(cars) && [...cars]
           .sort((a, b) => (b.recommended?1:0) - (a.recommended?1:0) || a.estimatedDailyRate - b.estimatedDailyRate)
           .map((car, i) => {
-            const iata = car.iataAirport;
-            const kayakUrl = AFF.kayakCars(iata || cityOnly(form.destination), form.dateFrom, form.dateTo, KAYAK_CAR_TYPE[car.category]);
-            const rcUrl    = AFF.rentalcars(cityOnly(form.destination), form.dateFrom, form.dateTo, RENTALCARS_TYPE[car.category]);
-            const bookUrl  = iata ? kayakUrl : rcUrl;
-            const bookSite = iata ? "Kayak" : "RentalCars.com";
+            const expediaType = EXPEDIA_CAR_TYPE[car.category] || "";
+            const bookUrl = AFF.expediaCars(cityOnly(form.destination), form.dateFrom, form.dateTo, expediaType);
+            const bookSite = "Expedia";
             return (
               <div key={i} style={{background:c.surface,border:`1.5px solid ${car.recommended?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden"}}>
                 {car.recommended && <div style={{background:c.accent,padding:"5px 12px",fontSize:10,fontWeight:800,color:"#fff",letterSpacing:"0.08em",textAlign:"center"}}>★ BEST VALUE</div>}
@@ -1327,7 +1326,7 @@ function CarsTab({ form, apiKey }) {
                     style={{display:"block",textAlign:"center",padding:"11px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800}}>
                     Book Now →
                   </a>
-                  <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"center"}}>via {bookSite}</div>
+                  <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"center"}}>via {bookSite} · filtered by {car.category||"category"}</div>
                 </div>
               </div>
             );
