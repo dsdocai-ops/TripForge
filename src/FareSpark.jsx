@@ -61,6 +61,8 @@ const AFF = {
     `https://www.viator.com/searchResults/all?text=${encodeURIComponent(dest||"")}&pid=YOURAFFID`,
   googleFlights: (from, to, date="") =>
     `https://www.google.com/travel/flights?q=flights+from+${encodeURIComponent(from||"")}+to+${encodeURIComponent(to||"")}${date?"+on+"+date:""}`,
+  stay22Hotels: (dest, checkin="", checkout="", guests=2) =>
+    `https://www.stay22.com/book?aid=faresparks&address=${encodeURIComponent(dest||"")}&checkin=${checkin}&checkout=${checkout}&guests=${guests}`,
 };
 
 // ─── Aircraft photos — keyed by lowercase keyword for fuzzy matching ──────────
@@ -938,7 +940,7 @@ function RestaurantsTab({ form, apiKey }) {
   );
 }
 
-// ─── Flights Tab — live prices by cabin class (Travelpayouts) + AI fallback ────
+// ─── Flights Tab — live prices (Travelpayouts) + AI fallback ─────────────────
 function FlightsTab({ form, settings, apiKey }) {
   const { c, fontBody } = useTokens();
   const [flights, setFlights] = useState(null);
@@ -1027,7 +1029,7 @@ function FlightsTab({ form, settings, apiKey }) {
       {isLive && (
         <div style={{background:c.accentLow,border:`1.5px solid ${c.accentBorder}`,borderRadius:10,padding:"10px 16px",marginBottom:18,display:"flex",gap:10,alignItems:"center"}}>
           <span style={{fontSize:16}}>🟢</span>
-          <p style={{color:c.accentHi,fontSize:13,margin:0,fontWeight:700}}>Live prices via Travelpayouts — best fare per cabin class · updated {Math.round((Date.now()-(flights.fetchedAt||Date.now()))/60000)||"just"} min ago</p>
+          <p style={{color:c.accentHi,fontSize:13,margin:0,fontWeight:700}}>Live prices via Travelpayouts — cheapest fare per cabin class · updated {Math.round((Date.now()-(flights.fetchedAt||Date.now()))/60000)||"just"} min ago</p>
         </div>
       )}
       {!isLive && !loading && !flights?._error && Array.isArray(flights) && (
@@ -1100,8 +1102,8 @@ function FlightsTab({ form, settings, apiKey }) {
       )}
 
       {!isLive && (
-        <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          {filtered.map((f, i) => {
+      <div style={{display:"flex",flexDirection:"column",gap:14}}>
+        {filtered.map((f, i) => {
             const isBestDeal = i === 0;
             const isNonstopBonus = i === 1 && f.stops === 0 && filtered[0].stops > 0;
             const hasIATA = f.iataFrom && f.iataTo;
@@ -1153,7 +1155,7 @@ function FlightsTab({ form, settings, apiKey }) {
               </div>
             );
           })}
-        </div>
+      </div>
       )}
     </div>
   );
@@ -1164,7 +1166,17 @@ function HotelsTab({ form, settings, apiKey }) {
   const { c, fontBody } = useTokens();
   const [hotels, setHotels] = useState(null);
   const [loading, setLoading] = useState(false);
-  const proxyBase = import.meta.env.VITE_PROXY_URL || "";
+
+  // Load Stay22 embed script once per page session
+  useEffect(() => {
+    const id = "stay22-embed-js";
+    if (document.getElementById(id)) return;
+    const s = document.createElement("script");
+    s.id = id;
+    s.src = "https://cdn.stay22.com/cdn/embed.js";
+    s.async = true;
+    document.head.appendChild(s);
+  }, []);
 
   async function fetchHotels() {
     if (!form.destination) return;
@@ -1174,29 +1186,6 @@ function HotelsTab({ form, settings, apiKey }) {
     if (hit) { setHotels(hit); return; }
     setLoading(true); setHotels(null);
     try {
-      // 1. Try Hotellook live prices (requires dates)
-      if (proxyBase && form.dateFrom && form.dateTo) {
-        const liveRes = await fetch(proxyBase.replace("/claude", "/hotels"), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            destination: cityOnly(form.destination),
-            checkin: form.dateFrom,
-            checkout: form.dateTo,
-            adults: form.travelers || 2,
-          }),
-        }).catch(() => null);
-        if (liveRes?.ok) {
-          const liveData = await liveRes.json().catch(() => null);
-          if (liveData?.live && liveData.hotels?.length) {
-            sSet(ck, liveData);
-            setHotels(liveData);
-            setLoading(false);
-            return;
-          }
-        }
-      }
-      // 2. Fall back to Claude AI estimates
       if (!apiKey) throw new Error("no key");
       const monthName = form.dateFrom ? new Date(form.dateFrom + "T12:00:00").toLocaleString("default", { month: "long" }) : "the travel period";
       const raw = await askClaude(
@@ -1215,13 +1204,11 @@ function HotelsTab({ form, settings, apiKey }) {
 
   useEffect(() => { if (form.destination) fetchHotels(); }, [form.destination]);
 
-  const isLiveHotels = hotels?.live === true;
-  const hotelNights = (isLiveHotels ? hotels.nights : null) || (form.dateFrom && form.dateTo
+  const hotelNights = (form.dateFrom && form.dateTo)
     ? Math.max(1, Math.round((new Date(form.dateTo) - new Date(form.dateFrom)) / 864e5))
-    : null);
+    : null;
 
-  // live data: hotels.hotels array; AI data: hotels array directly
-  const hotelList = isLiveHotels ? hotels.hotels : (Array.isArray(hotels) ? hotels : []);
+  const hotelList = Array.isArray(hotels) ? hotels : [];
   const filtered = [...hotelList]
     .filter(h => !settings.refundableOnly || h.refundable !== false)
     .sort((a, b) => (a.pricePerNight||999) - (b.pricePerNight||999));
@@ -1238,14 +1225,14 @@ function HotelsTab({ form, settings, apiKey }) {
       <AdSlot/>
       <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
         {[
+          {name:"🗺 Stay22", url:AFF.stay22Hotels(cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers||2), primary:true},
           {name:"Booking.com", url:AFF.bookingHotels(cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers)},
           {name:"Expedia", url:AFF.expediaHotels(cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers)},
           {name:"Hotels.com", url:AFF.hotelscom(cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers)},
           {name:"TripAdvisor", url:`https://www.tripadvisor.com/Search?q=${encodeURIComponent(cityOnly(form.destination||"")+" hotels")}`},
-          {name:"Priceline", url:`https://www.priceline.com/relax/in/${encodeURIComponent(cityOnly(form.destination)||"")}`},
         ].map(s => (
           <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
-            style={{padding:"10px 16px",background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:10,color:c.textMuted,textDecoration:"none",fontSize:13,fontWeight:600,fontFamily:fontBody}}>
+            style={{padding:"10px 16px",background:s.primary?c.accentLow:c.surface,border:`1.5px solid ${s.primary?c.accentBorder:c.border}`,borderRadius:10,color:s.primary?c.accentHi:c.textMuted,textDecoration:"none",fontSize:13,fontWeight:s.primary?700:600,fontFamily:fontBody}}>
             {s.name}
           </a>
         ))}
@@ -1254,16 +1241,26 @@ function HotelsTab({ form, settings, apiKey }) {
         </Btn>
       </div>
 
-      {isLiveHotels && (
-        <div style={{background:c.accentLow,border:`1.5px solid ${c.accentBorder}`,borderRadius:10,padding:"10px 16px",marginBottom:18,display:"flex",gap:10,alignItems:"center"}}>
-          <span style={{fontSize:16}}>🟢</span>
-          <p style={{color:c.accentHi,fontSize:13,margin:0,fontWeight:700}}>Live prices via Hotellook / Travelpayouts — real rates for your dates · updated {Math.round((Date.now()-(hotels.fetchedAt||Date.now()))/60000)||"just"} min ago</p>
+      {/* Stay22 interactive widget — only shown when check-in/out dates are set */}
+      {form.dateFrom && form.dateTo && (
+        <div style={{marginBottom:24,borderRadius:16,overflow:"hidden",border:`1.5px solid ${c.border}`}}>
+          <div
+            key={`s22-${form.destination}-${form.dateFrom}-${form.dateTo}-${form.travelers}`}
+            data-type="stay22-widget"
+            data-aid="faresparks"
+            data-address={cityOnly(form.destination)}
+            data-checkin={form.dateFrom}
+            data-checkout={form.dateTo}
+            data-guests={form.travelers || 2}
+            style={{width:"100%",minHeight:460}}
+          />
         </div>
       )}
-      {!isLiveHotels && !loading && !hotels?._error && hotelList.length > 0 && (
+
+      {!loading && !hotels?._error && hotelList.length > 0 && (
         <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:10,padding:"12px 16px",marginBottom:18,display:"flex",gap:10}}>
           <Icon name="info" size={16} color={c.info}/>
-          <p style={{color:c.textMuted,fontSize:13,margin:0,lineHeight:1.6}}>AI-estimated prices for {form.destination}{form.dateFrom ? "" : " — add travel dates for live pricing"}. Click <strong>Book Now</strong> for real-time rates on Booking.com.</p>
+          <p style={{color:c.textMuted,fontSize:13,margin:0,lineHeight:1.6}}>AI-curated picks for {form.destination}. Click <strong>Book Now</strong> to search real-time rates on Stay22.</p>
         </div>
       )}
 
@@ -1291,17 +1288,11 @@ function HotelsTab({ form, settings, apiKey }) {
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:16}}>
         {filtered.map((h, i) => {
           const isBestDeal = i === 0;
-          const bestRatedIdx = !isLiveHotels
-            ? filtered.reduce((bi, hh, ii) => (hh.rating||0) > (filtered[bi].rating||0) ? ii : bi, 0)
-            : -1;
-          const isTopRated = !isLiveHotels && i === bestRatedIdx && !isBestDeal;
-          // Live: use Hotellook deep link returned by the API (exact hotel + dates)
-          // AI fallback: Booking.com search with hotel name
-          const bookUrl = (isLiveHotels && h.bookingUrl)
-            ? h.bookingUrl
-            : AFF.bookingHotels(cityOnly(form.destination), form.dateFrom||"", form.dateTo||"", form.travelers||2, h.name);
-          const priceLabel = isLiveHotels ? `$${h.pricePerNight}` : `~$${h.pricePerNight}`;
-          const totalLabel = hotelNights ? (isLiveHotels ? `$${h.priceTotal || h.pricePerNight * hotelNights} total` : `~$${h.pricePerNight * hotelNights} total`) : null;
+          const bestRatedIdx = filtered.reduce((bi, hh, ii) => (hh.rating||0) > (filtered[bi].rating||0) ? ii : bi, 0);
+          const isTopRated = i === bestRatedIdx && !isBestDeal;
+          const bookUrl = AFF.stay22Hotels(cityOnly(form.destination), form.dateFrom||"", form.dateTo||"", form.travelers||2);
+          const priceLabel = `~$${h.pricePerNight}`;
+          const totalLabel = hotelNights ? `~$${h.pricePerNight * hotelNights} total` : null;
           return (
             <div key={i} style={{background:c.surface,border:`1.5px solid ${isBestDeal?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden"}}>
               {isBestDeal && <div style={{background:c.accent,padding:"7px 18px",fontSize:10,fontWeight:800,color:"#fff",letterSpacing:"0.1em",textAlign:"center"}}>★ BEST DEAL</div>}
@@ -1316,16 +1307,12 @@ function HotelsTab({ form, settings, apiKey }) {
               </div>
               <div style={{padding:18}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                  {!isLiveHotels && h.rating ? (
+                  {h.rating ? (
                     <div style={{display:"flex",alignItems:"center",gap:8}}>
                       <span style={{background:"rgba(34,211,160,0.15)",color:c.success,padding:"4px 10px",borderRadius:8,fontSize:13,fontWeight:800}}>{h.rating}</span>
                       <span style={{color:c.textMuted,fontSize:12}}>/10</span>
                     </div>
-                  ) : (
-                    <div style={{display:"flex",alignItems:"center",gap:4}}>
-                      {isLiveHotels && <span style={{background:"rgba(34,211,160,0.15)",color:c.success,padding:"3px 8px",borderRadius:6,fontSize:11,fontWeight:700}}>Live price</span>}
-                    </div>
-                  )}
+                  ) : <div/>}
                   <div>
                     <span style={{color:c.accent,fontWeight:900,fontSize:22}}>{priceLabel}</span>
                     <span style={{color:c.textMuted,fontSize:11}}>/night</span>
@@ -1342,14 +1329,14 @@ function HotelsTab({ form, settings, apiKey }) {
                     ))}
                   </div>
                 )}
-                {!isLiveHotels && h.refundable !== undefined && (
+                {h.refundable !== undefined && (
                   <span style={{fontSize:12,fontWeight:700,color:h.refundable?c.success:c.danger,display:"block",marginBottom:10}}>{h.refundable?"✓ Free cancellation":"Non-refundable"}</span>
                 )}
                 <a href={bookUrl} target="_blank" rel="noopener noreferrer"
                   style={{display:"block",textAlign:"center",padding:"11px 14px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800}}>
                   Book Now →
                 </a>
-                <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"center"}}>{isLiveHotels ? "via Hotellook · live rates · compares all booking sites" : "via Booking.com · confirm live pricing on site"}</div>
+                <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"center"}}>via Stay22 · hotels, apartments &amp; vacation rentals</div>
               </div>
             </div>
           );

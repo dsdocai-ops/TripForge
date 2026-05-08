@@ -49,7 +49,6 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "from, to, and date are required" });
   }
 
-  // Cache by route + month (prices don't change day-to-day for this API)
   const month = date.slice(0, 7);
   const ck = `tf:flights:tp:${from}:${to}:${month}`;
 
@@ -78,7 +77,6 @@ export default async function handler(req, res) {
       return res.status(200).json({ fallback: true, reason: "No price data" });
     }
 
-    // Response is keyed by destination IATA; grab first available
     const destKey = data.data[toCode] ? toCode : Object.keys(data.data)[0];
     const destData = data.data[destKey];
     if (!destData) {

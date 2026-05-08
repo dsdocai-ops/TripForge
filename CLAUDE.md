@@ -71,7 +71,7 @@ All affiliate placeholders use `YOURAFFID`. Search for this string to find every
 | `ANTHROPIC_API_KEY` | Vercel dashboard (no `VITE_` prefix) | Used server-side only in `api/claude.js` |
 | `KV_REST_API_URL` | Vercel KV integration | Upstash Redis URL, injected automatically |
 | `KV_REST_API_TOKEN` | Vercel KV integration | Upstash Redis token, injected automatically |
-| `TRAVELPAYOUTS_TOKEN` | Vercel dashboard | Travelpayouts API token for live flight prices (`api/flights.js`) |
+| `STAY22_AID` | hardcoded as `YOURAFFID` in `FareSpark.jsx` | Stay22 affiliate ID — replace every `YOURAFFID` in `AFF.stay22Hotels` and the widget `data-aid` attribute |
 
 ### Build quirk
 
