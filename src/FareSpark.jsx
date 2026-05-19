@@ -24,31 +24,27 @@ const AFF = {
     // Kayak cabin slug: e→economy, pe→premiumeconomy, b→business, f→first
     const CABIN_MAP = { e:"economy", pe:"premiumeconomy", b:"business", f:"first" };
     const cabinSlug = CABIN_MAP[cabin] || (cabin && !CABIN_MAP[cabin] ? cabin : "");
-    let url = `https://www.kayak.com/flights/${(fromIATA||"").toUpperCase()}-${(toIATA||"").toUpperCase()}${date?"/"+date:""}?adults=${travelers}&sort=price_a`;
+    let url = `https://www.kayak.com/flights/${(fromIATA||"").toUpperCase()}-${(toIATA||"").toUpperCase()}${date?"/"+date:""}?adults=${travelers}&sort=price_a&siteid=YOURAFFID`;
     if (cabinSlug) url += `&cabin=${cabinSlug}`;
     if (airlineCode) url += `&fs=airlines=${airlineCode.toUpperCase()}`;
     return url;
   },
-  trivago: (hotelName, dest, checkin="", checkout="", travelers=1) =>
-    `https://www.trivago.com/?iPathLinkType=2&aDateRange[arr]=${checkin}&aDateRange[dep]=${checkout}&aNominalAdults=${travelers}&sQuery=${encodeURIComponent(((hotelName||"")+" "+(dest||"")).trim())}`,
   bookingHotels: (dest, checkin="", checkout="", travelers=1, hotelName="") => {
     const q = hotelName ? `${hotelName} ${dest}` : (dest || "");
     return `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(q)}&checkin=${checkin}&checkout=${checkout}&group_adults=${travelers}&no_rooms=1&aid=YOURAFFID`;
   },
   expediaHotels: (dest, checkin="", checkout="", travelers=1) =>
     `https://www.expedia.com/Hotel-Search?destination=${encodeURIComponent(dest||"")}&startDate=${checkin}&endDate=${checkout}&adults=${travelers}&affcid=YOURAFFID`,
-  hotelscom: (dest, checkin="", checkout="", travelers=1) =>
-    `https://www.hotels.com/search.do?q-destination=${encodeURIComponent(dest||"")}&q-check-in=${checkin}&q-check-out=${checkout}&q-rooms=1&q-room-0-adults=${travelers}`,
   expediaFlights: (from, to, date="", travelers=1) =>
     `https://www.expedia.com/Flights-Search?flight-type=on&mode=search&trip=oneway&leg1=from:${encodeURIComponent(from||"")},to:${encodeURIComponent(to||"")},departure:${date}TANYT&passengers=adults:${travelers},children:0,infantinlap:Y&affcid=YOURAFFID`,
   kayakCars: (iataOrCity, pickup="", dropoff="", carType="") => {
     const loc = (iataOrCity||"").toUpperCase().length === 3 ? iataOrCity.toUpperCase() : slugify(iataOrCity||"");
     const base = `https://www.kayak.com/cars/${loc}`;
     const dated = (pickup && dropoff) ? `${base}/${pickup}/${dropoff}` : base;
-    return carType ? `${dated}?sort=price_a&filter=cabtype_${carType}` : `${dated}?sort=price_a`;
+    return carType ? `${dated}?sort=price_a&filter=cabtype_${carType}&siteid=YOURAFFID` : `${dated}?sort=price_a&siteid=YOURAFFID`;
   },
   kayakFlights: (from, to, date="", travelers=1) =>
-    `https://www.kayak.com/flights/${slugify(from)}-${slugify(to)}${date?"/"+date:""}?adults=${travelers}`,
+    `https://www.kayak.com/flights/${slugify(from)}-${slugify(to)}${date?"/"+date:""}?adults=${travelers}&siteid=YOURAFFID`,
   rentalcars: (dest, pickup="", dropoff="", carType="") => {
     const base = `https://www.rentalcars.com/SearchResults.do?affiliateCode=YOURAFFID&preflang=en&adplat=search&location=${encodeURIComponent(dest||"")}&d1=${pickup}&d2=${dropoff}`;
     return carType ? `${base}&carType=${carType}` : base;
@@ -59,8 +55,6 @@ const AFF = {
   },
   viator: (dest) =>
     `https://www.viator.com/searchResults/all?text=${encodeURIComponent(dest||"")}&pid=YOURAFFID`,
-  googleFlights: (from, to, date="") =>
-    `https://www.google.com/travel/flights?q=flights+from+${encodeURIComponent(from||"")}+to+${encodeURIComponent(to||"")}${date?"+on+"+date:""}`,
   stay22Hotels: (dest, checkin="", checkout="", guests=2) =>
     `https://www.stay22.com/book?aid=faresparks&address=${encodeURIComponent(dest||"")}&checkin=${checkin}&checkout=${checkout}&guests=${guests}`,
 };
@@ -1012,7 +1006,6 @@ function FlightsTab({ form, settings, apiKey }) {
       <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
         {[
           {name:"🔍 Skyscanner", url:skUrl, primary:true},
-          {name:"Google Flights", url:AFF.googleFlights(fromCity, destCity, form.dateFrom)},
           {name:"Expedia", url:AFF.expediaFlights(fromCity, destCity, form.dateFrom, form.travelers)},
           {name:"Kayak", url:AFF.kayakFlights(fromCity, destCity, form.dateFrom, form.travelers)},
         ].map(s => (
@@ -1228,7 +1221,6 @@ function HotelsTab({ form, settings, apiKey }) {
           {name:"🗺 Stay22", url:AFF.stay22Hotels(cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers||2), primary:true},
           {name:"Booking.com", url:AFF.bookingHotels(cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers)},
           {name:"Expedia", url:AFF.expediaHotels(cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers)},
-          {name:"Hotels.com", url:AFF.hotelscom(cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers)},
           {name:"TripAdvisor", url:`https://www.tripadvisor.com/Search?q=${encodeURIComponent(cityOnly(form.destination||"")+" hotels")}`},
         ].map(s => (
           <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
