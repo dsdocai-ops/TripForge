@@ -255,6 +255,55 @@ function Skeleton({ h="1rem", w="100%", r="10px" }) {
   return <div style={{height:h,width:w,borderRadius:r,background:`linear-gradient(90deg,${c.surface} 25%,${c.surfaceHover} 50%,${c.surface} 75%)`,backgroundSize:"200% 100%",animation:"shimmer 1.6s infinite"}} />;
 }
 
+// ─── Price Hacks Panel ────────────────────────────────────────────────────────
+function PriceHacksPanel({ form, apiKey }) {
+  const { c, fontBody } = useTokens();
+  const [hacks, setHacks] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!form.destination || !apiKey) return;
+    const ck = sCacheKey("pricehacks", form.destination, form.from, form.dateFrom?.slice(0, 7));
+    const hit = sGet(ck);
+    if (hit) { setHacks(hit); return; }
+    setLoading(true);
+    askClaude(
+      `Travel pricing expert. Return ONLY a JSON object. Rules: (1) bestDayToFly: cheapest day(s) of week for this exact route, e.g. "Tuesday or Wednesday" (2) budgetAirlines: array of 1-3 real budget/low-cost carriers that fly this route — empty array if none (3) nearbyAirport: if a major alternate airport within 60 miles of origin OR destination is meaningfully cheaper, return {"name":"Airport Name","iata":"XXX","side":"origin"|"destination","savingEstimate":"10-20%"} — else null (4) bookingWindow: how far ahead to book for best price, e.g. "6-8 weeks ahead" (5) offPeakTip: one sentence, max 16 words, cheapest travel period for this destination. Return exactly: {"bestDayToFly":"string","budgetAirlines":["string"],"nearbyAirport":null|{"name":"string","iata":"string","side":"string","savingEstimate":"string"},"bookingWindow":"string","offPeakTip":"string"}. No markdown.`,
+      `Route: ${form.from || "New York"} to ${form.destination}. Date: ${form.dateFrom || "flexible"}. Style: ${form.style || "general"}. Budget: $${form.budget || 3000}.`,
+      apiKey, 400
+    ).then(raw => {
+      try { const d = parseJSON(raw); sSet(ck, d); setHacks(d); } catch {}
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, [form.destination, form.from, form.dateFrom?.slice(0, 7)]);
+
+  if (loading) return <div style={{marginBottom:16}}><Skeleton h="80px" r="12px"/></div>;
+  if (!hacks) return null;
+
+  const chips = [
+    hacks.bestDayToFly && { icon:"📅", text:`Fly ${hacks.bestDayToFly}` },
+    hacks.budgetAirlines?.length > 0 && { icon:"✈️", text:hacks.budgetAirlines.join(", ") },
+    hacks.nearbyAirport && { icon:"🛬", text:`${hacks.nearbyAirport.name} (${hacks.nearbyAirport.iata}) · save ${hacks.nearbyAirport.savingEstimate}` },
+    hacks.bookingWindow && { icon:"🗓", text:`Book ${hacks.bookingWindow}` },
+  ].filter(Boolean);
+
+  return (
+    <div style={{background:c.tealLow,border:`1.5px solid rgba(15,212,200,0.2)`,borderRadius:12,padding:"12px 16px",marginBottom:18}}>
+      <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:9}}>
+        <span style={{fontSize:14}}>💡</span>
+        <span style={{color:c.teal,fontWeight:800,fontSize:12,fontFamily:fontBody,letterSpacing:"0.04em"}}>WAYS TO PAY LESS</span>
+      </div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:7,marginBottom:hacks.offPeakTip?8:0}}>
+        {chips.map((chip,i) => (
+          <span key={i} style={{display:"inline-flex",alignItems:"center",gap:5,background:c.surface,border:`1px solid ${c.border}`,borderRadius:999,padding:"5px 11px",fontSize:12,color:c.text,fontFamily:fontBody}}>
+            <span>{chip.icon}</span><span>{chip.text}</span>
+          </span>
+        ))}
+      </div>
+      {hacks.offPeakTip && <p style={{color:c.textMuted,fontSize:12,margin:0,lineHeight:1.5}}>{hacks.offPeakTip}</p>}
+    </div>
+  );
+}
+
 // ─── Image with two-level fallback ────────────────────────────────────────────
 function Img({ src, fallbackSrc, alt="", style={}, iconName="plane" }) {
   const { c } = useTokens();
@@ -1019,10 +1068,21 @@ function FlightsTab({ form, settings, apiKey }) {
         </Btn>
       </div>
 
+      <PriceHacksPanel form={form} apiKey={apiKey}/>
+
       {isLive && (
         <div style={{background:c.accentLow,border:`1.5px solid ${c.accentBorder}`,borderRadius:10,padding:"10px 16px",marginBottom:18,display:"flex",gap:10,alignItems:"center"}}>
           <span style={{fontSize:16}}>🟢</span>
           <p style={{color:c.accentHi,fontSize:13,margin:0,fontWeight:700}}>Live prices via Travelpayouts — cheapest fare per cabin class · updated {Math.round((Date.now()-(flights.fetchedAt||Date.now()))/60000)||"just"} min ago</p>
+        </div>
+      )}
+      {isLive && flights?.cheaperDay && (
+        <div style={{background:c.tealLow,border:`1.5px solid rgba(15,212,200,0.25)`,borderRadius:10,padding:"10px 16px",marginBottom:18,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{fontSize:15}}>💰</span>
+          <p style={{color:c.teal,fontSize:13,margin:0,fontWeight:700,flex:1}}>
+            Fly {new Date(flights.cheaperDay.date+"T12:00:00").toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"})} instead — save ${flights.cheaperDay.savings} per person
+            <a href={AFF.kayakFlightsIATA(flights.fromCode, flights.toCode, flights.cheaperDay.date, form.travelers||1, "e")} target="_blank" rel="noopener noreferrer" style={{marginLeft:12,color:c.accentHi,fontSize:12,fontWeight:700,textDecoration:"none"}}>Search this date →</a>
+          </p>
         </div>
       )}
       {!isLive && !loading && !flights?._error && Array.isArray(flights) && (
@@ -1159,6 +1219,17 @@ function HotelsTab({ form, settings, apiKey }) {
   const { c, fontBody } = useTokens();
   const [hotels, setHotels] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [livePrices, setLivePrices] = useState(null);
+  const proxyBase = import.meta.env.VITE_PROXY_URL || "";
+
+  useEffect(() => {
+    if (!form.destination || !form.dateFrom || !form.dateTo || !proxyBase) return;
+    fetch(proxyBase.replace("/claude", "/hotels"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ destination: cityOnly(form.destination), checkIn: form.dateFrom, checkOut: form.dateTo }),
+    }).then(r => r.ok ? r.json() : null).then(d => { if (d?.live) setLivePrices(d); }).catch(() => {});
+  }, [form.destination, form.dateFrom, form.dateTo]);
 
   // Load Stay22 embed script once per page session
   useEffect(() => {
@@ -1233,6 +1304,8 @@ function HotelsTab({ form, settings, apiKey }) {
         </Btn>
       </div>
 
+      <PriceHacksPanel form={form} apiKey={apiKey}/>
+
       {/* Stay22 interactive widget — only shown when check-in/out dates are set */}
       {form.dateFrom && form.dateTo && (
         <div style={{marginBottom:24,borderRadius:16,overflow:"hidden",border:`1.5px solid ${c.border}`}}>
@@ -1251,8 +1324,13 @@ function HotelsTab({ form, settings, apiKey }) {
 
       {!loading && !hotels?._error && hotelList.length > 0 && (
         <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:10,padding:"12px 16px",marginBottom:18,display:"flex",gap:10}}>
-          <Icon name="info" size={16} color={c.info}/>
-          <p style={{color:c.textMuted,fontSize:13,margin:0,lineHeight:1.6}}>AI-curated picks for {form.destination}. Click <strong>Book Now</strong> to search real-time rates on Stay22.</p>
+          <Icon name={livePrices?.live ? "check" : "info"} size={16} color={livePrices?.live ? c.success : c.info}/>
+          <p style={{color:c.textMuted,fontSize:13,margin:0,lineHeight:1.6}}>
+            {livePrices?.live
+              ? <>Live starting prices for {form.destination}. Click <strong>Book Now</strong> to compare on Stay22.</>
+              : <>AI-curated picks for {form.destination}. Click <strong>Book Now</strong> to search real-time rates on Stay22.</>
+            }
+          </p>
         </div>
       )}
 
@@ -1283,8 +1361,12 @@ function HotelsTab({ form, settings, apiKey }) {
           const bestRatedIdx = filtered.reduce((bi, hh, ii) => (hh.rating||0) > (filtered[bi].rating||0) ? ii : bi, 0);
           const isTopRated = i === bestRatedIdx && !isBestDeal;
           const bookUrl = AFF.stay22Hotels(cityOnly(form.destination), form.dateFrom||"", form.dateTo||"", form.travelers||2);
-          const priceLabel = `~$${h.pricePerNight}`;
-          const totalLabel = hotelNights ? `~$${h.pricePerNight * hotelNights} total` : null;
+          const livePrice = livePrices?.live
+            ? (h.stars >= 5 ? livePrices.tiers.upscale : h.stars <= 3 ? livePrices.tiers.budget : livePrices.tiers.mid)
+            : null;
+          const displayPrice = livePrice || h.pricePerNight;
+          const priceLabel = livePrice ? `$${displayPrice}` : `~$${displayPrice}`;
+          const totalLabel = hotelNights ? (livePrice ? `$${displayPrice * hotelNights} total` : `~$${displayPrice * hotelNights} total`) : null;
           return (
             <div key={i} style={{background:c.surface,border:`1.5px solid ${isBestDeal?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden"}}>
               {isBestDeal && <div style={{background:c.accent,padding:"7px 18px",fontSize:10,fontWeight:800,color:"#fff",letterSpacing:"0.1em",textAlign:"center"}}>★ BEST DEAL</div>}
