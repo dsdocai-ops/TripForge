@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "WebSearch"
+      "WebSearch",
+      "mcp__d29f0a41-977b-4cac-87ee-d5d84d540d6e__list_teams"
     ]
   }
 }

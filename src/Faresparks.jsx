@@ -10,6 +10,24 @@ const CLAUDE_MODEL = "claude-haiku-4-5-20251001";
 const PROXY_URL    = import.meta.env.VITE_PROXY_URL || "";
 const SITE_API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || "";
 
+// ─── Travelpayouts affiliate ──────────────────────────────────────────────────
+// ONE credential to fill in: your partner marker from https://tp.media/promo
+// Program IDs: verify each in your TP dashboard under the brand's Tools > Links
+const TP_MARKER = "YOURMARKER";
+const TP_PROG = {
+  skyscanner: 116,  // Skyscanner — check TP dashboard
+  kayak:       50,  // Kayak      — check TP dashboard
+  booking:      3,  // Booking.com (standard TP program ID)
+  expedia:    221,  // Expedia    — check TP dashboard
+  viator:     306,  // Viator     — check TP dashboard
+  rentalcars: 183,  // RentalCars (standard TP program ID)
+};
+// Wraps any destination URL in a TP tracked redirect; falls back to direct URL until marker is set
+function tpLink(progId, url) {
+  if (TP_MARKER === "YOURMARKER") return url;
+  return `https://tp.media/r?marker=${TP_MARKER}&p=${progId}&u=${encodeURIComponent(url)}`;
+}
+
 // ─── Affiliate links (deep-linked with dates + traveler count) ───────────────
 // Converts "New York" or "New York, NY, USA" → "new-york" for Skyscanner/Kayak slugs
 function slugify(s) { return cityOnly(s||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,""); }
@@ -19,51 +37,66 @@ const AFF = {
     const d1 = (date||"").replace(/-/g,"").slice(2); // YYMMDD
     const d2 = (dateReturn||"").replace(/-/g,"").slice(2);
     const seg = d1 ? (d2 ? `${d1}/${d2}` : d1) : "any";
-    return `https://www.skyscanner.com/transport/flights/${slugify(from)||"anywhere"}/${slugify(to)||"anywhere"}/${seg}/?adults=${travelers}`;
+    const base = `https://www.skyscanner.com/transport/flights/${slugify(from)||"anywhere"}/${slugify(to)||"anywhere"}/${seg}/?adults=${travelers}`;
+    return tpLink(TP_PROG.skyscanner, base);
   },
   kayakFlightsIATA: (fromIATA, toIATA, date="", travelers=1, cabin="", airlineCode="") => {
-    // Kayak cabin slug: e→economy, pe→premiumeconomy, b→business, f→first
     const CABIN_MAP = { e:"economy", pe:"premiumeconomy", b:"business", f:"first" };
     const cabinSlug = CABIN_MAP[cabin] || (cabin && !CABIN_MAP[cabin] ? cabin : "");
-    let url = `https://www.kayak.com/flights/${(fromIATA||"").toUpperCase()}-${(toIATA||"").toUpperCase()}${date?"/"+date:""}?adults=${travelers}&sort=price_a`;
-    if (cabinSlug) url += `&cabin=${cabinSlug}`;
-    if (airlineCode) url += `&fs=airlines=${airlineCode.toUpperCase()}`;
-    return url;
+    let base = `https://www.kayak.com/flights/${(fromIATA||"").toUpperCase()}-${(toIATA||"").toUpperCase()}${date?"/"+date:""}?adults=${travelers}&sort=price_a`;
+    if (cabinSlug) base += `&cabin=${cabinSlug}`;
+    if (airlineCode) base += `&fs=airlines=${airlineCode.toUpperCase()}`;
+    return tpLink(TP_PROG.kayak, base);
   },
-  trivago: (hotelName, dest, checkin="", checkout="", travelers=1) =>
-    `https://www.trivago.com/?iPathLinkType=2&aDateRange[arr]=${checkin}&aDateRange[dep]=${checkout}&aNominalAdults=${travelers}&sQuery=${encodeURIComponent(((hotelName||"")+" "+(dest||"")).trim())}`,
   bookingHotels: (dest, checkin="", checkout="", travelers=1, hotelName="") => {
     const q = hotelName ? `${hotelName} ${dest}` : (dest || "");
-    return `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(q)}&checkin=${checkin}&checkout=${checkout}&group_adults=${travelers}&no_rooms=1`;
+    const base = `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(q)}&checkin=${checkin}&checkout=${checkout}&group_adults=${travelers}&no_rooms=1`;
+    return tpLink(TP_PROG.booking, base);
   },
-  expediaHotels: (dest, checkin="", checkout="", travelers=1) =>
-    `https://www.expedia.com/Hotel-Search?destination=${encodeURIComponent(dest||"")}&startDate=${checkin}&endDate=${checkout}&adults=${travelers}&affcid=YOURAFFID`,
-  hotelscom: (dest, checkin="", checkout="", travelers=1) =>
-    `https://www.hotels.com/search.do?q-destination=${encodeURIComponent(dest||"")}&q-check-in=${checkin}&q-check-out=${checkout}&q-rooms=1&q-room-0-adults=${travelers}`,
-  expediaFlights: (from, to, date="", travelers=1) =>
-    `https://www.expedia.com/Flights-Search?flight-type=on&mode=search&trip=oneway&leg1=from:${encodeURIComponent(from||"")},to:${encodeURIComponent(to||"")},departure:${date}TANYT&passengers=adults:${travelers},children:0,infantinlap:Y&affcid=YOURAFFID`,
+  expediaHotels: (dest, checkin="", checkout="", travelers=1) => {
+    const base = `https://www.expedia.com/Hotel-Search?destination=${encodeURIComponent(dest||"")}&startDate=${checkin}&endDate=${checkout}&adults=${travelers}`;
+    return tpLink(TP_PROG.expedia, base);
+  },
+  expediaFlights: (from, to, date="", travelers=1) => {
+    const base = `https://www.expedia.com/Flights-Search?flight-type=on&mode=search&trip=oneway&leg1=from:${encodeURIComponent(from||"")},to:${encodeURIComponent(to||"")},departure:${date}TANYT&passengers=adults:${travelers},children:0,infantinlap:Y`;
+    return tpLink(TP_PROG.expedia, base);
+  },
   kayakCars: (iataOrCity, pickup="", dropoff="", carType="") => {
     const loc = (iataOrCity||"").toUpperCase().length === 3 ? iataOrCity.toUpperCase() : slugify(iataOrCity||"");
     const base = `https://www.kayak.com/cars/${loc}`;
     const dated = (pickup && dropoff) ? `${base}/${pickup}/${dropoff}` : base;
-    return carType ? `${dated}?sort=price_a&filter=cabtype_${carType}` : `${dated}?sort=price_a`;
+    const full = carType ? `${dated}?sort=price_a&filter=cabtype_${carType}` : `${dated}?sort=price_a`;
+    return tpLink(TP_PROG.kayak, full);
   },
-  kayakFlights: (from, to, date="", travelers=1) =>
-    `https://www.kayak.com/flights/${slugify(from)}-${slugify(to)}${date?"/"+date:""}?adults=${travelers}`,
+  kayakFlights: (from, to, date="", travelers=1) => {
+    const base = `https://www.kayak.com/flights/${slugify(from)}-${slugify(to)}${date?"/"+date:""}?adults=${travelers}`;
+    return tpLink(TP_PROG.kayak, base);
+  },
   rentalcars: (dest, pickup="", dropoff="", carType="") => {
     const base = `https://www.rentalcars.com/SearchResults.do?preflang=en&adplat=search&location=${encodeURIComponent(dest||"")}&d1=${pickup}&d2=${dropoff}`;
-    return carType ? `${base}&carType=${carType}` : base;
+    const full = carType ? `${base}&carType=${carType}` : base;
+    return tpLink(TP_PROG.rentalcars, full);
   },
   expediaCars: (dest, pickup="", dropoff="", carType="") => {
-    const base = `https://www.expedia.com/Cars/search?location=${encodeURIComponent(dest||"")}&startDate=${pickup}&endDate=${dropoff}&affcid=YOURAFFID`;
-    return carType ? `${base}&carType=${carType}` : base;
+    const base = `https://www.expedia.com/Cars/search?location=${encodeURIComponent(dest||"")}&startDate=${pickup}&endDate=${dropoff}`;
+    const full = carType ? `${base}&carType=${carType}` : base;
+    return tpLink(TP_PROG.expedia, full);
   },
-  viator: (dest) =>
-    `https://www.viator.com/searchResults/all?text=${encodeURIComponent(dest||"")}&pid=YOURAFFID`,
-  googleFlights: (from, to, date="") =>
-    `https://www.google.com/travel/flights?q=flights+from+${encodeURIComponent(from||"")}+to+${encodeURIComponent(to||"")}${date?"+on+"+date:""}`,
+  viator: (dest) => {
+    const base = `https://www.viator.com/searchResults/all?text=${encodeURIComponent(dest||"")}`;
+    return tpLink(TP_PROG.viator, base);
+  },
   stay22Hotels: (dest, checkin="", checkout="", guests=2) =>
     `https://www.stay22.com/book?aid=faresparks&address=${encodeURIComponent(dest||"")}&checkin=${checkin}&checkout=${checkout}&guests=${guests}`,
+  kayakPackages: (from, to, date="", returnDate="", travelers=1) => {
+    const seg = date ? (returnDate ? `${date}/${returnDate}` : date) : "";
+    const base = `https://www.kayak.com/packages/${slugify(from)}-${slugify(to)}${seg?"/"+seg:""}?adults=${travelers}`;
+    return tpLink(TP_PROG.kayak, base);
+  },
+  expediaPackages: (from, to, date="", returnDate="", travelers=1) => {
+    const base = `https://www.expedia.com/Deals/Packages/Hotel-Flight?from=${encodeURIComponent(from||"")}&to=${encodeURIComponent(to||"")}&startDate=${date}&endDate=${returnDate}&adults=${travelers}`;
+    return tpLink(TP_PROG.expedia, base);
+  },
 };
 
 // ─── Aircraft photos — keyed by lowercase keyword for fuzzy matching ──────────
@@ -273,6 +306,62 @@ function Icon({ name, size=20, color="currentColor" }) {
 function Skeleton({ h="1rem", w="100%", r="10px" }) {
   const { c } = useTokens();
   return <div style={{height:h,width:w,borderRadius:r,background:`linear-gradient(90deg,${c.surface} 25%,${c.surfaceHover} 50%,${c.surface} 75%)`,backgroundSize:"200% 100%",animation:"shimmer 1.6s infinite"}} />;
+}
+
+// ─── Price Hacks Panel ────────────────────────────────────────────────────────
+function PriceHacksPanel({ form, apiKey }) {
+  const { c, fontBody } = useTokens();
+  const [hacks, setHacks] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!form.destination || !apiKey) return;
+    const ck = sCacheKey("pricehacks", form.destination, form.from, form.dateFrom?.slice(0, 7));
+    const hit = sGet(ck);
+    if (hit) { setHacks(hit); return; }
+    setLoading(true);
+    askClaude(
+      `Travel pricing expert. Return ONLY a JSON object. Rules: (1) bestDayToFly: cheapest day(s) of week for this exact route, e.g. "Tuesday or Wednesday" (2) budgetAirlines: array of 1-3 real budget/low-cost carriers that fly this route — empty array if none (3) nearbyAirport: if a major alternate airport within 60 miles of origin OR destination is meaningfully cheaper, return {"name":"Airport Name","iata":"XXX","side":"origin"|"destination","savingEstimate":"10-20%"} — else null (4) bookingWindow: how far ahead to book for best price, e.g. "6-8 weeks ahead" (5) offPeakTip: one sentence, max 16 words, cheapest travel period for this destination. Return exactly: {"bestDayToFly":"string","budgetAirlines":["string"],"nearbyAirport":null|{"name":"string","iata":"string","side":"string","savingEstimate":"string"},"bookingWindow":"string","offPeakTip":"string"}. No markdown.`,
+      `Route: ${form.from || "New York"} to ${form.destination}. Date: ${form.dateFrom || "flexible"}. Style: ${form.style || "general"}. Budget: $${form.budget || 3000}.`,
+      apiKey, 700
+    ).then(raw => {
+      try { const d = parseJSON(raw); sSet(ck, d); setHacks(d); } catch {}
+    }).catch(() => {}).finally(() => setLoading(false));
+  }, [form.destination, form.from, form.dateFrom?.slice(0, 7)]);
+
+  if (loading) return <div style={{marginBottom:16}}><Skeleton h="80px" r="12px"/></div>;
+  if (!hacks) return null;
+
+  const chips = [
+    hacks.bestDayToFly && { icon:"📅", text:`Fly ${hacks.bestDayToFly}` },
+    hacks.budgetAirlines?.length > 0 && { icon:"✈️", text:hacks.budgetAirlines.join(", ") },
+    hacks.nearbyAirport && {
+      icon:"🛬",
+      text:`${hacks.nearbyAirport.name} (${hacks.nearbyAirport.iata}) · save ${hacks.nearbyAirport.savingEstimate} →`,
+      href: hacks.nearbyAirport.side === "origin"
+        ? AFF.skyscanner(hacks.nearbyAirport.iata, cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers||1)
+        : AFF.skyscanner(cityOnly(form.from||""), hacks.nearbyAirport.iata, form.dateFrom, form.dateTo, form.travelers||1),
+    },
+    hacks.bookingWindow && { icon:"🗓", text:`Book ${hacks.bookingWindow}` },
+  ].filter(Boolean);
+
+  const chipBase = {display:"inline-flex",alignItems:"center",gap:5,background:c.surface,border:`1px solid ${c.border}`,borderRadius:999,padding:"5px 11px",fontSize:12,fontFamily:fontBody,textDecoration:"none"};
+
+  return (
+    <div style={{background:c.tealLow,border:`1.5px solid rgba(15,212,200,0.2)`,borderRadius:12,padding:"12px 16px",marginBottom:18}}>
+      <div style={{display:"flex",alignItems:"center",gap:7,marginBottom:9}}>
+        <span style={{fontSize:14}}>💡</span>
+        <span style={{color:c.teal,fontWeight:800,fontSize:12,fontFamily:fontBody,letterSpacing:"0.04em"}}>WAYS TO PAY LESS</span>
+      </div>
+      <div style={{display:"flex",flexWrap:"wrap",gap:7,marginBottom:hacks.offPeakTip?8:0}}>
+        {chips.map((chip,i) => chip.href
+          ? <a key={i} href={chip.href} target="_blank" rel="noopener noreferrer" style={{...chipBase,color:c.teal,borderColor:"rgba(15,212,200,0.35)"}}><span>{chip.icon}</span><span>{chip.text}</span></a>
+          : <span key={i} style={{...chipBase,color:c.text}}><span>{chip.icon}</span><span>{chip.text}</span></span>
+        )}
+      </div>
+      {hacks.offPeakTip && <p style={{color:c.textMuted,fontSize:12,margin:0,lineHeight:1.5}}>{hacks.offPeakTip}</p>}
+    </div>
+  );
 }
 
 // ─── Image with two-level fallback ────────────────────────────────────────────
@@ -991,7 +1080,7 @@ function FlightsTab({ form, settings, apiKey }) {
       // 2. Fall back to Claude AI estimates
       if (!apiKey) throw new Error("no key");
       const raw = await askClaude(
-        `Flight data expert. Return ONLY a JSON array of 4 flight options. Strict rules: (1) Only airlines that genuinely operate this exact route. (2) iataFrom/iataTo: correct primary IATA airport codes. (3) airlineCode: the airline's official 2-letter IATA carrier code (e.g. "AA" for American, "BA" for British Airways, "LH" for Lufthansa, "DL" for Delta, "UA" for United, "AF" for Air France, "EK" for Emirates, "QR" for Qatar, "SQ" for Singapore, "FR" for Ryanair, "U2" for easyJet — use the real code). (4) estimatedPrice = realistic economy fare per person ONE-WAY: domestic US/Canada $100-380 (short-haul $100-200, coast-to-coast $180-380); intra-Europe $40-260 (budget $40-130, full-service $90-260); transatlantic US↔Europe $350-1050 (+30% peak summer/holiday); US/Europe↔Asia $420-1100; intra-Asia $60-380; US/Europe↔Latin America $200-650; US/Europe↔Middle East/Africa $450-1200; Oceania long-haul $600-1400. +25-40% peak season. (5) Include nonstop and 1-stop where airlines actually fly them. (6) flightNumber: real IATA prefix + plausible number. (7) duration accurate for the route. Each: {"airline":"string","airlineCode":"XX","from":"string","to":"string","iataFrom":"XXX","iataTo":"YYY","depart":"HH:MM","arrive":"HH:MM","duration":"Xh Ym","stops":0,"estimatedPrice":000,"refundable":true,"flightNumber":"XX 000","bookingClass":"Economy"}. No markdown. Exactly 4 items.`,
+        `Flight data expert. Return ONLY a JSON array of 4 flight options. Strict rules: (1) Only airlines that genuinely operate this exact route. (2) iataFrom/iataTo: correct primary IATA airport codes. (3) airlineCode: the airline's official 2-letter IATA carrier code (e.g. "AA" for American, "BA" for British Airways, "LH" for Lufthansa, "DL" for Delta, "UA" for United, "AF" for Air France, "EK" for Emirates, "QR" for Qatar, "SQ" for Singapore, "FR" for Ryanair, "U2" for easyJet — use the real code). (4) ORDERING: item 0 MUST be the absolute cheapest option on this route — use a budget/low-cost carrier (Spirit, Frontier, Ryanair, EasyJet, WizzAir, Vueling, IndiGo, AirAsia, etc.) or basic economy fare if one genuinely flies this route; only use full-service if no LCC operates it. Items 1-3 sorted by price ascending. (5) estimatedPrice = realistic economy fare per person ONE-WAY: domestic US/Canada $100-380 (short-haul $100-200, coast-to-coast $180-380); intra-Europe $40-260 (budget $40-130, full-service $90-260); transatlantic US↔Europe $350-1050 (+30% peak summer/holiday); US/Europe↔Asia $420-1100; intra-Asia $60-380; US/Europe↔Latin America $200-650; US/Europe↔Middle East/Africa $450-1200; Oceania long-haul $600-1400. +25-40% peak season. (6) Include nonstop and 1-stop where airlines actually fly them. (7) flightNumber: real IATA prefix + plausible number. (8) duration accurate for the route. Each: {"airline":"string","airlineCode":"XX","from":"string","to":"string","iataFrom":"XXX","iataTo":"YYY","depart":"HH:MM","arrive":"HH:MM","duration":"Xh Ym","stops":0,"estimatedPrice":000,"refundable":true,"flightNumber":"XX 000","bookingClass":"Economy"}. No markdown. Exactly 4 items.`,
         `Flights from ${sanitiseInput(form.from, 80) || "New York"} to ${sanitiseInput(form.destination)}${form.dateFrom ? ` on ${form.dateFrom}` : ""}. ${parseInt(form.travelers, 10) || 2} traveler(s). Travel style: ${sanitiseInput(form.style, 60) || "general"}. Budget consideration: $${parseInt(form.budget, 10) || 3000} total trip.`,
         apiKey, 1200
       );
@@ -1026,9 +1115,9 @@ function FlightsTab({ form, settings, apiKey }) {
       <div style={{display:"flex",gap:10,marginBottom:20,flexWrap:"wrap",alignItems:"center"}}>
         {[
           {name:"🔍 Skyscanner", url:skUrl, primary:true},
-          {name:"Google Flights", url:AFF.googleFlights(fromCity, destCity, form.dateFrom)},
           {name:"Expedia", url:AFF.expediaFlights(fromCity, destCity, form.dateFrom, form.travelers)},
           {name:"Kayak", url:AFF.kayakFlights(fromCity, destCity, form.dateFrom, form.travelers)},
+          ...(form.dateTo ? [{name:"🎁 Flight+Hotel", url:AFF.kayakPackages(fromCity, destCity, form.dateFrom, form.dateTo, form.travelers||1)}] : []),
         ].map(s => (
           <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
             style={{padding:"10px 18px",background:s.primary?c.accentLow:c.surface,border:`1.5px solid ${s.primary?c.accentBorder:c.border}`,borderRadius:10,color:s.primary?c.accentHi:c.textMuted,textDecoration:"none",fontSize:13,fontWeight:700,fontFamily:fontBody}}>
@@ -1040,10 +1129,30 @@ function FlightsTab({ form, settings, apiKey }) {
         </Btn>
       </div>
 
+      <PriceHacksPanel form={form} apiKey={apiKey}/>
+
       {isLive && (
         <div style={{background:c.accentLow,border:`1.5px solid ${c.accentBorder}`,borderRadius:10,padding:"10px 16px",marginBottom:18,display:"flex",gap:10,alignItems:"center"}}>
           <span style={{fontSize:16}}>🟢</span>
           <p style={{color:c.accentHi,fontSize:13,margin:0,fontWeight:700}}>Live prices via Travelpayouts — cheapest fare per cabin class · updated {Math.round((Date.now()-(flights.fetchedAt||Date.now()))/60000)||"just"} min ago</p>
+        </div>
+      )}
+      {isLive && flights?.cheaperDay && (
+        <div style={{background:c.tealLow,border:`1.5px solid rgba(15,212,200,0.25)`,borderRadius:10,padding:"10px 16px",marginBottom:18,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{fontSize:15}}>💰</span>
+          <p style={{color:c.teal,fontSize:13,margin:0,fontWeight:700,flex:1}}>
+            Fly {new Date(flights.cheaperDay.date+"T12:00:00").toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"})} instead — save ${flights.cheaperDay.savings} per person
+            <a href={AFF.kayakFlightsIATA(flights.fromCode, flights.toCode, flights.cheaperDay.date, form.travelers||1, "e")} target="_blank" rel="noopener noreferrer" style={{marginLeft:12,color:c.accentHi,fontSize:12,fontWeight:700,textDecoration:"none"}}>Search this date →</a>
+          </p>
+        </div>
+      )}
+      {isLive && flights?.monthCheapest && (
+        <div style={{background:c.tealLow,border:`1.5px solid rgba(15,212,200,0.2)`,borderRadius:10,padding:"10px 16px",marginBottom:18,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{fontSize:15}}>📅</span>
+          <p style={{color:c.teal,fontSize:13,margin:0,fontWeight:700,flex:1}}>
+            Cheapest this month: {new Date(flights.monthCheapest.date+"T12:00:00").toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"})} — save ${flights.monthCheapest.savings} per person
+            <a href={AFF.kayakFlightsIATA(flights.fromCode, flights.toCode, flights.monthCheapest.date, form.travelers||1, "e")} target="_blank" rel="noopener noreferrer" style={{marginLeft:12,color:c.accentHi,fontSize:12,fontWeight:700,textDecoration:"none"}}>Search →</a>
+          </p>
         </div>
       )}
       {!isLive && !loading && !flights?._error && Array.isArray(flights) && (
@@ -1180,6 +1289,17 @@ function HotelsTab({ form, settings, apiKey }) {
   const { c, fontBody } = useTokens();
   const [hotels, setHotels] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [livePrices, setLivePrices] = useState(null);
+  const proxyBase = import.meta.env.VITE_PROXY_URL || "";
+
+  useEffect(() => {
+    if (!form.destination || !form.dateFrom || !form.dateTo || !proxyBase) return;
+    fetch(proxyBase.replace("/claude", "/hotels"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ destination: cityOnly(form.destination), checkIn: form.dateFrom, checkOut: form.dateTo }),
+    }).then(r => r.ok ? r.json() : null).then(d => { if (d?.live) setLivePrices(d); }).catch(() => {});
+  }, [form.destination, form.dateFrom, form.dateTo]);
 
   // Load Stay22 embed script once per page session
   useEffect(() => {
@@ -1242,8 +1362,8 @@ function HotelsTab({ form, settings, apiKey }) {
           {name:"🗺 Stay22", url:AFF.stay22Hotels(cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers||2), primary:true},
           {name:"Booking.com", url:AFF.bookingHotels(cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers)},
           {name:"Expedia", url:AFF.expediaHotels(cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers)},
-          {name:"Hotels.com", url:AFF.hotelscom(cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers)},
           {name:"TripAdvisor", url:`https://www.tripadvisor.com/Search?q=${encodeURIComponent(cityOnly(form.destination||"")+" hotels")}`},
+          ...(form.from && form.dateTo ? [{name:"🎁 Flight+Hotel", url:AFF.kayakPackages(cityOnly(form.from), cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers||1)}] : []),
         ].map(s => (
           <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
             style={{padding:"10px 16px",background:s.primary?c.accentLow:c.surface,border:`1.5px solid ${s.primary?c.accentBorder:c.border}`,borderRadius:10,color:s.primary?c.accentHi:c.textMuted,textDecoration:"none",fontSize:13,fontWeight:s.primary?700:600,fontFamily:fontBody}}>
@@ -1254,6 +1374,8 @@ function HotelsTab({ form, settings, apiKey }) {
           <Icon name="sparkle" size={14} color={c.accentHi}/>{loading ? "Searching…" : "Refresh"}
         </Btn>
       </div>
+
+      <PriceHacksPanel form={form} apiKey={apiKey}/>
 
       {/* Stay22 interactive widget — only shown when check-in/out dates are set */}
       {form.dateFrom && form.dateTo && (
@@ -1273,8 +1395,13 @@ function HotelsTab({ form, settings, apiKey }) {
 
       {!loading && !hotels?._error && hotelList.length > 0 && (
         <div style={{background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:10,padding:"12px 16px",marginBottom:18,display:"flex",gap:10}}>
-          <Icon name="info" size={16} color={c.info}/>
-          <p style={{color:c.textMuted,fontSize:13,margin:0,lineHeight:1.6}}>AI-curated picks for {form.destination}. Click <strong>Book Now</strong> to search real-time rates on Stay22.</p>
+          <Icon name={livePrices?.live ? "check" : "info"} size={16} color={livePrices?.live ? c.success : c.info}/>
+          <p style={{color:c.textMuted,fontSize:13,margin:0,lineHeight:1.6}}>
+            {livePrices?.live
+              ? <>Live starting prices for {form.destination}. Click <strong>Book Now</strong> to compare on Stay22.</>
+              : <>AI-curated picks for {form.destination}. Click <strong>Book Now</strong> to search real-time rates on Stay22.</>
+            }
+          </p>
         </div>
       )}
 
@@ -1305,8 +1432,12 @@ function HotelsTab({ form, settings, apiKey }) {
           const bestRatedIdx = filtered.reduce((bi, hh, ii) => (hh.rating||0) > (filtered[bi].rating||0) ? ii : bi, 0);
           const isTopRated = i === bestRatedIdx && !isBestDeal;
           const bookUrl = AFF.stay22Hotels(cityOnly(form.destination), form.dateFrom||"", form.dateTo||"", form.travelers||2);
-          const priceLabel = `~$${h.pricePerNight}`;
-          const totalLabel = hotelNights ? `~$${h.pricePerNight * hotelNights} total` : null;
+          const livePrice = livePrices?.live
+            ? (h.stars >= 5 ? livePrices.tiers.upscale : h.stars <= 3 ? livePrices.tiers.budget : livePrices.tiers.mid)
+            : null;
+          const displayPrice = livePrice || h.pricePerNight;
+          const priceLabel = livePrice ? `$${displayPrice}` : `~$${displayPrice}`;
+          const totalLabel = hotelNights ? (livePrice ? `$${displayPrice * hotelNights} total` : `~$${displayPrice * hotelNights} total`) : null;
           return (
             <div key={i} style={{background:c.surface,border:`1.5px solid ${isBestDeal?c.accentBorder:c.border}`,borderRadius:18,overflow:"hidden"}}>
               {isBestDeal && <div style={{background:c.accent,padding:"7px 18px",fontSize:10,fontWeight:800,color:"#fff",letterSpacing:"0.1em",textAlign:"center"}}>★ BEST DEAL</div>}
@@ -1349,6 +1480,10 @@ function HotelsTab({ form, settings, apiKey }) {
                 <a href={bookUrl} target="_blank" rel="noopener noreferrer"
                   style={{display:"block",textAlign:"center",padding:"11px 14px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800}}>
                   Book Now →
+                </a>
+                <a href={AFF.bookingHotels(cityOnly(form.destination), form.dateFrom||"", form.dateTo||"", form.travelers||2, h.name)} target="_blank" rel="noopener noreferrer"
+                  style={{display:"block",textAlign:"center",padding:"7px 14px",background:c.bg2,border:`1px solid ${c.border}`,borderRadius:10,color:c.textMuted,textDecoration:"none",fontSize:12,fontWeight:600,marginTop:6}}>
+                  Compare on Booking.com →
                 </a>
                 <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"center"}}>via Stay22 · hotels, apartments &amp; vacation rentals</div>
               </div>
