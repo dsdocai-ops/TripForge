@@ -1,9 +1,12 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import FareSpark from './FareSpark'
+import { HelmetProvider } from 'react-helmet-async'
+import Faresparks from './Faresparks'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <FareSpark />
+    <HelmetProvider>
+      <Faresparks />
+    </HelmetProvider>
   </React.StrictMode>
 )

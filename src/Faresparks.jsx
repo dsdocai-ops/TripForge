@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
+import { Helmet } from "react-helmet-async";
 
 // ─── Model ────────────────────────────────────────────────────────────────────
 const CLAUDE_MODEL = "claude-haiku-4-5-20251001";
@@ -7,7 +8,7 @@ const CLAUDE_MODEL = "claude-haiku-4-5-20251001";
 // Set VITE_PROXY_URL in .env to route calls through your Cloudflare Worker
 // (keeps API key off the client). Falls back to direct browser call.
 const PROXY_URL    = import.meta.env.VITE_PROXY_URL || "";
-const SITE_API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || "YOUR_ANTHROPIC_API_KEY_HERE";
+const SITE_API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || "";
 
 // ─── Affiliate links (deep-linked with dates + traveler count) ───────────────
 // Converts "New York" or "New York, NY, USA" → "new-york" for Skyscanner/Kayak slugs
@@ -18,7 +19,7 @@ const AFF = {
     const d1 = (date||"").replace(/-/g,"").slice(2); // YYMMDD
     const d2 = (dateReturn||"").replace(/-/g,"").slice(2);
     const seg = d1 ? (d2 ? `${d1}/${d2}` : d1) : "any";
-    return `https://www.skyscanner.com/transport/flights/${slugify(from)||"anywhere"}/${slugify(to)||"anywhere"}/${seg}/?adults=${travelers}&utm_source=YOURAFFID`;
+    return `https://www.skyscanner.com/transport/flights/${slugify(from)||"anywhere"}/${slugify(to)||"anywhere"}/${seg}/?adults=${travelers}`;
   },
   kayakFlightsIATA: (fromIATA, toIATA, date="", travelers=1, cabin="", airlineCode="") => {
     // Kayak cabin slug: e→economy, pe→premiumeconomy, b→business, f→first
@@ -33,7 +34,7 @@ const AFF = {
     `https://www.trivago.com/?iPathLinkType=2&aDateRange[arr]=${checkin}&aDateRange[dep]=${checkout}&aNominalAdults=${travelers}&sQuery=${encodeURIComponent(((hotelName||"")+" "+(dest||"")).trim())}`,
   bookingHotels: (dest, checkin="", checkout="", travelers=1, hotelName="") => {
     const q = hotelName ? `${hotelName} ${dest}` : (dest || "");
-    return `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(q)}&checkin=${checkin}&checkout=${checkout}&group_adults=${travelers}&no_rooms=1&aid=YOURAFFID`;
+    return `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(q)}&checkin=${checkin}&checkout=${checkout}&group_adults=${travelers}&no_rooms=1`;
   },
   expediaHotels: (dest, checkin="", checkout="", travelers=1) =>
     `https://www.expedia.com/Hotel-Search?destination=${encodeURIComponent(dest||"")}&startDate=${checkin}&endDate=${checkout}&adults=${travelers}&affcid=YOURAFFID`,
@@ -50,7 +51,7 @@ const AFF = {
   kayakFlights: (from, to, date="", travelers=1) =>
     `https://www.kayak.com/flights/${slugify(from)}-${slugify(to)}${date?"/"+date:""}?adults=${travelers}`,
   rentalcars: (dest, pickup="", dropoff="", carType="") => {
-    const base = `https://www.rentalcars.com/SearchResults.do?affiliateCode=YOURAFFID&preflang=en&adplat=search&location=${encodeURIComponent(dest||"")}&d1=${pickup}&d2=${dropoff}`;
+    const base = `https://www.rentalcars.com/SearchResults.do?preflang=en&adplat=search&location=${encodeURIComponent(dest||"")}&d1=${pickup}&d2=${dropoff}`;
     return carType ? `${base}&carType=${carType}` : base;
   },
   expediaCars: (dest, pickup="", dropoff="", carType="") => {
@@ -219,6 +220,19 @@ function sSet(k, v) { try { sessionStorage.setItem(k, JSON.stringify(v)); } catc
 function sCacheKey(...parts) { return "tf_" + parts.map(p => String(p||"").toLowerCase().replace(/\s+/g,"_")).join("_"); }
 // Strips region/country suffix from CityInput values ("Paris, Île-de-France, France" → "Paris")
 function cityOnly(s) { return (s||"").split(",")[0].trim(); }
+
+// ─── Prompt-injection sanitiser ───────────────────────────────────────────────
+// Strip newlines, backticks and any obvious injection markers from free-text
+// user fields before they are interpolated into an LLM prompt string.
+function sanitiseInput(raw, maxLen = 120) {
+  if (!raw || typeof raw !== "string") return "";
+  return raw
+    .replace(/[\r\n\t]+/g, " ")           // no line-breaks in prompts
+    .replace(/`/g, "'")                    // no backticks (template-literal breakers)
+    .replace(/\bignore\b.{0,40}\binstruction/gi, "")  // obvious injection attempts
+    .trim()
+    .slice(0, maxLen);
+}
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 function Icon({ name, size=20, color="currentColor" }) {
@@ -483,7 +497,7 @@ function HeroSearch({ onSearch, loading }) {
               Your next trip, fully planned<br/>in 30 seconds.
             </h1>
             <p style={{color:"rgba(255,255,255,0.85)",fontSize:15,margin:0,lineHeight:1.65,maxWidth:520}}>
-              Tell FareSpark where you want to go and your budget — our AI builds a complete day-by-day itinerary, finds flights, hotels, and restaurants, all in one place.
+              Tell Faresparks where you want to go and your budget — our AI builds a complete day-by-day itinerary, finds flights, hotels, and restaurants, all in one place.
             </p>
           </div>
           <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
@@ -623,7 +637,7 @@ function ItineraryTab({ tripData, loading, form, apiKey }) {
     try {
       const raw = await askClaude(
         `Travel expert. Return ONLY JSON: {"budgetTips":["string","string","string"],"packing":{"categories":[{"name":"string","items":["string"]}]}}. No markdown.`,
-        `${form.style} trip to ${form.destination}. ${form.travelers} travelers. $${form.budget} budget. ${form.dateFrom||"flexible"} to ${form.dateTo||"flexible"}.`,
+        `${sanitiseInput(form.style, 60)} trip to ${sanitiseInput(form.destination)}. ${parseInt(form.travelers, 10) || 2} travelers. $${parseInt(form.budget, 10) || 3000} budget. ${form.dateFrom||"flexible"} to ${form.dateTo||"flexible"}.`,
         apiKey, 1500
       );
       const parsed = parseJSON(raw);
@@ -658,7 +672,7 @@ function ItineraryTab({ tripData, loading, form, apiKey }) {
         <div style={{width:"100%",maxWidth:320,margin:"0 auto",height:4,background:c.border,borderRadius:4,overflow:"hidden"}}>
           <div style={{height:"100%",background:`linear-gradient(90deg,${c.accent},${c.accentHi})`,borderRadius:4,animation:"progress 14s linear forwards"}}/>
         </div>
-        <div style={{color:c.textMuted,fontSize:13,marginTop:14}}>FareSpark is crafting your {form.style} trip to <strong style={{color:c.text}}>{form.destination}</strong></div>
+        <div style={{color:c.textMuted,fontSize:13,marginTop:14}}>Faresparks is crafting your {form.style} trip to <strong style={{color:c.text}}>{form.destination}</strong></div>
       </div>
       {[1,2,3].map(i=><div key={i} style={{background:c.surface,borderRadius:16,padding:24,display:"flex",flexDirection:"column",gap:12}}><Skeleton h="20px" w="40%"/><Skeleton h="14px"/><Skeleton h="14px" w="70%"/></div>)}
     </div>
@@ -868,7 +882,7 @@ function RestaurantsTab({ form, apiKey }) {
     try {
       const raw = await askClaude(
         `Local food expert. Return ONLY JSON: {"restaurants":[{"name":"string","cuisine":"string","priceRange":"$/$$/$$$/$$$$","mustTry":"string","neighborhood":"string","tip":"string"}]}. 6 restaurants. No markdown.`,
-        `Best restaurants in ${form.destination} for a ${form.style||"general"} trip.`,
+        `Best restaurants in ${sanitiseInput(form.destination)} for a ${sanitiseInput(form.style, 60)||"general"} trip.`,
         apiKey, 1200
       );
       const parsed = parseJSON(raw);
@@ -978,7 +992,7 @@ function FlightsTab({ form, settings, apiKey }) {
       if (!apiKey) throw new Error("no key");
       const raw = await askClaude(
         `Flight data expert. Return ONLY a JSON array of 4 flight options. Strict rules: (1) Only airlines that genuinely operate this exact route. (2) iataFrom/iataTo: correct primary IATA airport codes. (3) airlineCode: the airline's official 2-letter IATA carrier code (e.g. "AA" for American, "BA" for British Airways, "LH" for Lufthansa, "DL" for Delta, "UA" for United, "AF" for Air France, "EK" for Emirates, "QR" for Qatar, "SQ" for Singapore, "FR" for Ryanair, "U2" for easyJet — use the real code). (4) estimatedPrice = realistic economy fare per person ONE-WAY: domestic US/Canada $100-380 (short-haul $100-200, coast-to-coast $180-380); intra-Europe $40-260 (budget $40-130, full-service $90-260); transatlantic US↔Europe $350-1050 (+30% peak summer/holiday); US/Europe↔Asia $420-1100; intra-Asia $60-380; US/Europe↔Latin America $200-650; US/Europe↔Middle East/Africa $450-1200; Oceania long-haul $600-1400. +25-40% peak season. (5) Include nonstop and 1-stop where airlines actually fly them. (6) flightNumber: real IATA prefix + plausible number. (7) duration accurate for the route. Each: {"airline":"string","airlineCode":"XX","from":"string","to":"string","iataFrom":"XXX","iataTo":"YYY","depart":"HH:MM","arrive":"HH:MM","duration":"Xh Ym","stops":0,"estimatedPrice":000,"refundable":true,"flightNumber":"XX 000","bookingClass":"Economy"}. No markdown. Exactly 4 items.`,
-        `Flights from ${form.from || "New York"} to ${form.destination}${form.dateFrom ? ` on ${form.dateFrom}` : ""}. ${form.travelers || 2} traveler(s). Travel style: ${form.style || "general"}. Budget consideration: $${form.budget || 3000} total trip.`,
+        `Flights from ${sanitiseInput(form.from, 80) || "New York"} to ${sanitiseInput(form.destination)}${form.dateFrom ? ` on ${form.dateFrom}` : ""}. ${parseInt(form.travelers, 10) || 2} traveler(s). Travel style: ${sanitiseInput(form.style, 60) || "general"}. Budget consideration: $${parseInt(form.budget, 10) || 3000} total trip.`,
         apiKey, 1200
       );
       const parsed = parseJSON(raw);
@@ -1190,7 +1204,7 @@ function HotelsTab({ form, settings, apiKey }) {
       const monthName = form.dateFrom ? new Date(form.dateFrom + "T12:00:00").toLocaleString("default", { month: "long" }) : "the travel period";
       const raw = await askClaude(
         `Hotel data expert. Return ONLY a JSON array of 4 real hotels. Strict rules: (1) Only real, currently-operating hotels — use the actual brand name. (2) pricePerNight: accurate USD nightly rate for this specific city in ${monthName}. Use destination-aware tiers: ultra-expensive cities (Zurich, London, NYC, SF, Dubai, Singapore, Paris peak): budget $130-200, mid $220-380, upscale $420-800; expensive cities (Tokyo, Sydney, Amsterdam, Miami, Chicago, LA, Vienna, Copenhagen): budget $90-150, mid $160-300, upscale $320-600; mid-tier cities (Barcelona, Rome, Lisbon, Prague, Bangkok peak, Seoul, Montreal, Berlin): budget $60-110, mid $120-220, upscale $240-450; affordable cities (Budapest, Krakow, Bangkok off-peak, Ho Chi Minh, Mexico City, Bali, Cairo): budget $30-70, mid $70-140, upscale $150-300. Apply seasonal premium: summer/holidays/peak season +25-40%; shoulder season ±0%; off-peak -15-25%. (3) rating: actual known score 0-10 for this property. (4) stars: real classification. (5) neighborhood: actual district name. (6) amenities: only what this hotel realistically has from [wifi, pool, gym, coffee]. (7) Variety: one budget, two mid-range, one upscale. Each: {"name":"string","stars":number,"neighborhood":"string","description":"string max 18 words","pricePerNight":number,"amenities":["wifi"],"refundable":boolean,"rating":number}. No markdown. Exactly 4 items.`,
-        `Best hotels in ${form.destination} for ${form.travelers || 2} traveler(s), $${form.budget || 3000} total budget, style: ${form.style || "general"}${form.dateFrom ? `. Travel dates: ${form.dateFrom} to ${form.dateTo} (${monthName})` : ""}.`,
+        `Best hotels in ${sanitiseInput(form.destination)} for ${parseInt(form.travelers, 10) || 2} traveler(s), $${parseInt(form.budget, 10) || 3000} total budget, style: ${sanitiseInput(form.style, 60) || "general"}${form.dateFrom ? `. Travel dates: ${form.dateFrom} to ${form.dateTo} (${monthName})` : ""}.`,
         apiKey, 1400
       );
       const parsed = parseJSON(raw);
@@ -1374,7 +1388,7 @@ function CarsTab({ form, apiKey }) {
     try {
       const raw = await askClaude(
         `Car rental data expert. Return ONLY a JSON array of 4 rental options. Strict rules: (1) example: a specific real car model commonly available at this destination. (2) estimatedDailyRate: accurate USD daily rate for this destination in ${carMonthName}. Use destination-aware rates: Western Europe/UK/Australia/Scandinavia: Economy $45-80, Midsize $65-110, Compact SUV $75-130, Luxury $130-250; North America: Economy $30-60, Midsize $40-75, Compact SUV $50-90, Luxury $90-200; Southern/Eastern Europe, Japan, South Korea: Economy $30-60, Midsize $40-80, Compact SUV $55-100, Luxury $100-200; Southeast Asia, Latin America, Caribbean: Economy $25-50, Midsize $35-65, Compact SUV $45-80, Luxury $80-160. Apply peak season +20-35% (summer in Europe/North America, Christmas/New Year anywhere, spring break). (3) features: 2-3 accurate for this category from [Automatic, Manual, Air conditioning, GPS available, Unlimited mileage, Child seat available, Bluetooth, Hybrid]. (4) recommended: single best value option true. (5) iataAirport: nearest major airport IATA code. Each: {"category":"Economy"|"Compact SUV"|"Midsize"|"Luxury","example":"string","estimatedDailyRate":number,"features":["string"],"recommended":boolean,"supplier":"string","iataAirport":"XXX"}. No markdown. Exactly 4 items.`,
-        `Car rentals in ${form.destination} for ${carNights} days in ${carMonthName}. Budget: $${form.budget || 3000} total for ${form.travelers || 2} traveler(s). Style: ${form.style || "general"}.`,
+        `Car rentals in ${sanitiseInput(form.destination)} for ${carNights} days in ${carMonthName}. Budget: $${parseInt(form.budget, 10) || 3000} total for ${parseInt(form.travelers, 10) || 2} traveler(s). Style: ${sanitiseInput(form.style, 60) || "general"}.`,
         apiKey, 800
       );
       const parsed = parseJSON(raw);
@@ -1590,14 +1604,14 @@ function LandingSections({ onSearch, loading }) {
 
   const steps = [
     { num:"01", icon:"✏️", title:"Tell us your trip", desc:"Enter your destination, travel dates, budget, and travel style. Takes about 30 seconds." },
-    { num:"02", icon:"⚡", title:"AI builds your plan", desc:"FareSpark generates a full day-by-day itinerary with real places, real timings, and real costs." },
+    { num:"02", icon:"⚡", title:"AI builds your plan", desc:"Faresparks generates a full day-by-day itinerary with real places, real timings, and real costs." },
     { num:"03", icon:"🎯", title:"Book everything in one place", desc:"Flights, hotels, and activities are all linked. Click to book. Done." },
   ];
 
   const features = [
     { emoji:"📅", title:"A complete itinerary, not a list of ideas", desc:"Every day is mapped out hour by hour with specific real places — not generic suggestions like 'visit a museum'." },
     { emoji:"💰", title:"A budget that actually adds up", desc:"See exactly what flights, hotels, food, and activities will cost before you book a single thing." },
-    { emoji:"✈️", title:"Flights and hotels compared for you", desc:"FareSpark pulls options from Skyscanner, Booking.com, and Expedia so you never need to open five tabs." },
+    { emoji:"✈️", title:"Flights and hotels compared for you", desc:"Faresparks pulls options from Skyscanner, Booking.com, and Expedia so you never need to open five tabs." },
     { emoji:"🧳", title:"A packing list built for your trip", desc:"Tailored to your destination, dates, and weather — not a generic checklist." },
     { emoji:"🍽️", title:"Restaurant picks from a local perspective", desc:"Specific restaurants in specific neighborhoods, with the dish you should actually order." },
     { emoji:"🖨️", title:"Printable and shareable", desc:"One tap to get a clean print-ready itinerary to share with your travel companions." },
@@ -1684,8 +1698,8 @@ function LandingSections({ onSearch, loading }) {
         {/* Honest prompt — no fake reviews */}
         <div style={{maxWidth:560,margin:"0 auto",textAlign:"center",padding:"32px 28px",background:c.surface,border:`1.5px solid ${c.border}`,borderRadius:20}}>
           <div style={{fontSize:36,marginBottom:14}}>✈️</div>
-          <div style={{color:c.text,fontWeight:700,fontSize:18,marginBottom:8,letterSpacing:"-0.02em"}}>Be one of the first to try FareSpark</div>
-          <p style={{color:c.textMuted,fontSize:14,lineHeight:1.7,margin:"0 0 20px"}}>FareSpark is brand new. Plan your trip, see what it builds, and let us know what you think. Your feedback shapes what gets built next.</p>
+          <div style={{color:c.text,fontWeight:700,fontSize:18,marginBottom:8,letterSpacing:"-0.02em"}}>Be one of the first to try Faresparks</div>
+          <p style={{color:c.textMuted,fontSize:14,lineHeight:1.7,margin:"0 0 20px"}}>Faresparks is brand new. Plan your trip, see what it builds, and let us know what you think. Your feedback shapes what gets built next.</p>
           <button onClick={scrollToForm}
             style={{display:"inline-flex",alignItems:"center",gap:8,padding:"12px 24px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,color:"#fff",border:"none",borderRadius:12,fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:fontBody}}>
             Try it now — it&apos;s free →
@@ -1714,7 +1728,7 @@ function LandingSections({ onSearch, loading }) {
           Plan My Trip Free →
         </button>
         <div style={{color:"rgba(255,255,255,0.65)",fontSize:12,marginTop:14,fontWeight:500}}>
-          Free to plan · Affiliate links help keep FareSpark running
+          Free to plan · Affiliate links help keep Faresparks running
         </div>
       </div>
 
@@ -1723,7 +1737,7 @@ function LandingSections({ onSearch, loading }) {
 }
 
 // ─── Main App ─────────────────────────────────────────────────────────────────
-export default function FareSpark() {
+export default function Faresparks() {
   const { c, dark, font, fontBody } = useTokens();
   const [, toggleTheme] = useTheme();
   const apiKey = SITE_API_KEY; // Key is set at top of file — no user input needed
@@ -1756,12 +1770,12 @@ export default function FareSpark() {
       const dest = p.get("dest");
       if (!dest) return;
       handleSearch({
-        destination: dest, from: p.get("from")||"",
+        destination: sanitiseInput(dest, 120), from: sanitiseInput(p.get("from")||"", 80),
         dateFrom: p.get("df")||"", dateTo: p.get("dt")||"",
         travelers: p.get("t")||"2", budget: p.get("b")||"3000",
-        style: p.get("s")||"relaxation",
+        style: sanitiseInput(p.get("s")||"", 60) || "relaxation",
         multiCity: false, surpriseMode: false,
-        destinations: [{ city: dest, dateFrom: p.get("df")||"", dateTo: p.get("dt")||"" }],
+        destinations: [{ city: sanitiseInput(dest, 120), dateFrom: p.get("df")||"", dateTo: p.get("dt")||"" }],
       });
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1779,27 +1793,33 @@ export default function FareSpark() {
         ? `Arrival: ${formData.dateFrom}. Departure: ${formData.dateTo||"open-ended"}. CRITICAL: plan exactly ${activityDays} days (Day 1 = arrival day ${formData.dateFrom}, Day ${activityDays} = last full day before departure — do NOT create a separate departure day). Only suggest attractions confirmed open during these dates. Mention seasonal events or weather for this period.`
         : `Dates flexible — plan for a typical season. Plan exactly ${activityDays} days.`;
 
-      const dest = formData.surpriseMode
-        ? `Best ${formData.style} destination within $${formData.budget} from ${formData.from||"the US"} for ${formData.travelers} travelers`
-        : formData.multiCity
-          ? `multi-city: ${formData.destinations?.map(d=>d.city).filter(Boolean).join(" → ")}`
-          : formData.destination;
+      // Sanitise all free-text user fields before they touch any prompt
+      const safeStyle     = sanitiseInput(formData.style, 60) || "relaxation";
+      const safeFrom      = sanitiseInput(formData.from, 80);
+      const safeBudget    = String(parseInt(formData.budget, 10) || 3000);
+      const safeTravelers = String(Math.max(1, parseInt(formData.travelers, 10) || 2));
 
-      const ck = sCacheKey("itin", dest, formData.style, formData.travelers, formData.budget, nights);
+      const dest = formData.surpriseMode
+        ? `Best ${safeStyle} destination within $${safeBudget} from ${safeFrom||"the US"} for ${safeTravelers} travelers`
+        : formData.multiCity
+          ? `multi-city: ${formData.destinations?.map(d=>sanitiseInput(d.city, 80)).filter(Boolean).join(" → ")}`
+          : sanitiseInput(formData.destination, 120);
+
+      const ck = sCacheKey("itin", dest, safeStyle, safeTravelers, safeBudget, nights);
       const hit = sGet(ck);
       if (hit) { setTripData(hit); setLoading(false); return; }
 
       const system = `You are an expert travel planner. RULES:
-1. All activities, restaurants, and attractions MUST be real places in ${dest} accessible during the given dates.
+1. All activities, restaurants, and attractions MUST be real places in "${dest}" accessible during the given dates.
 2. Use real names — no generic placeholders.
-3. Budget accurately for ${formData.travelers} traveler(s).
+3. Budget accurately for ${safeTravelers} traveler(s).
 4. Keep descriptions SHORT — max 15 words each. Keep notes null unless essential.
 5. The "days" array MUST contain exactly ${activityDays} entries — no more, no fewer. Day 1 is the arrival day. The departure day is NOT a separate day.
 6. Return ONLY valid JSON. No markdown. No commentary. No trailing commas.
 {"destination":"string","summary":"1 sentence overview + 1 sentence seasonal note","budgetBreakdown":{"flights":"~$XXX","hotels":"~$XXX/night","food":"~$XX/day","activities":"~$XXX total"},"days":[{"title":"string","theme":"string","activities":[{"time":"string","name":"string","description":"string max 15 words","cost":"string or null"}],"notes":null}],"tips":["string","string","string"]}`;
 
       const raw = await askClaude(system,
-        `Plan a ${formData.style} trip to ${dest} with exactly ${activityDays} days in the itinerary. ${formData.travelers} traveler(s). $${formData.budget} total budget. ${dateContext} Origin: ${formData.from||"unspecified"}.`,
+        `Plan a ${safeStyle} trip to "${dest}" with exactly ${activityDays} days in the itinerary. ${safeTravelers} traveler(s). $${safeBudget} total budget. ${dateContext} Origin: "${safeFrom||"unspecified"}".`,
         apiKey, 4096
       );
       const parsed = parseJSON(raw);
@@ -1835,8 +1855,58 @@ export default function FareSpark() {
     {id:"weather",     label:"Weather",     icon:"sun"},
   ];
 
+  // ── Dynamic SEO meta tags ────────────────────────────────────────────────────
+  const seoDestination = form.destination || "";
+  const seoTitle = (() => {
+    if (!seoDestination) return "Faresparks — AI Travel Planner | Free Itinerary Generator";
+    const tabLabels = { itinerary: "Itinerary", flights: "Flights", hotels: "Hotels", cars: "Car Rentals", weather: "Weather", restaurants: "Restaurants" };
+    const tabSuffix = tab !== "itinerary" ? ` — ${tabLabels[tab] || ""}` : "";
+    return `${seoDestination} Travel Guide${tabSuffix} | Faresparks`;
+  })();
+  const seoDescription = seoDestination
+    ? `Plan your ${seoDestination} trip with AI. Get a free day-by-day itinerary, flight search, hotel picks, and local tips — all in 30 seconds. No signup required.`
+    : "Faresparks uses AI to generate complete travel itineraries in 30 seconds. Day-by-day plans, flights, hotels, restaurants, and budget breakdowns. Free, no account needed.";
+  const seoCanonical = seoDestination
+    ? `https://Faresparks.com/plan?dest=${encodeURIComponent(seoDestination)}`
+    : "https://Faresparks.com";
+
   return (
     <>
+      <Helmet>
+        <title>{seoTitle}</title>
+        <meta name="description" content={seoDescription} />
+        <link rel="canonical" href={seoCanonical} />
+        {/* Open Graph */}
+        <meta property="og:type" content="website" />
+        <meta property="og:title" content={seoTitle} />
+        <meta property="og:description" content={seoDescription} />
+        <meta property="og:url" content={seoCanonical} />
+        <meta property="og:site_name" content="Faresparks" />
+        <meta property="og:image" content="https://Faresparks.com/og-image.png" />
+        {/* Twitter Card */}
+        <meta name="twitter:card" content="summary_large_image" />
+        <meta name="twitter:title" content={seoTitle} />
+        <meta name="twitter:description" content={seoDescription} />
+        <meta name="twitter:image" content="https://Faresparks.com/og-image.png" />
+        {/* Structured data — travel planning app */}
+        <script type="application/ld+json">{JSON.stringify({
+          "@context": "https://schema.org",
+          "@type": "WebApplication",
+          "name": "Faresparks",
+          "url": "https://Faresparks.com",
+          "description": "AI-powered travel itinerary generator. Plan any trip in 30 seconds.",
+          "applicationCategory": "TravelApplication",
+          "operatingSystem": "Web",
+          "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+          ...(seoDestination && {
+            "about": {
+              "@type": "TouristDestination",
+              "name": seoDestination,
+              "description": `Travel guide and itinerary planner for ${seoDestination}`
+            }
+          })
+        })}</script>
+      </Helmet>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap');
         *,*::before,*::after{box-sizing:border-box;margin:0;padding:0;}
@@ -1898,7 +1968,7 @@ export default function FareSpark() {
             <div style={{width:36,height:36,borderRadius:10,background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:`0 4px 12px ${c.accentBorder}`}}>
               <Icon name="globe" size={18} color="#fff"/>
             </div>
-            <span style={{fontSize:18,fontWeight:800,letterSpacing:"-0.04em",color:c.text,fontFamily:font}}>FareSpark</span>
+            <span style={{fontSize:18,fontWeight:800,letterSpacing:"-0.04em",color:c.text,fontFamily:font}}>Faresparks</span>
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             <button onClick={()=>window.scrollTo({top:0,behavior:"smooth"})}
@@ -1933,8 +2003,8 @@ export default function FareSpark() {
             <div className="print-only" style={{paddingBottom:20,marginBottom:28,borderBottom:"2.5px solid #e8520a"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                 <div>
-                  <div style={{fontFamily:'"Sora",system-ui,sans-serif',fontSize:28,fontWeight:900,color:"#e8520a",letterSpacing:"-0.04em",lineHeight:1}}>FareSpark</div>
-                  <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"#6b6258",marginTop:5}}>AI Travel Planner · farespark.app</div>
+                  <div style={{fontFamily:'"Sora",system-ui,sans-serif',fontSize:28,fontWeight:900,color:"#e8520a",letterSpacing:"-0.04em",lineHeight:1}}>Faresparks</div>
+                  <div style={{fontSize:10,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",color:"#6b6258",marginTop:5}}>AI Travel Planner · Faresparks.app</div>
                 </div>
                 <div style={{textAlign:"right"}}>
                   <div style={{fontSize:22,fontWeight:800,color:"#12100e",letterSpacing:"-0.03em"}}>{tripData?.destination || form.destination}</div>
@@ -1980,7 +2050,7 @@ export default function FareSpark() {
                 <div style={{width:28,height:28,borderRadius:8,background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,display:"flex",alignItems:"center",justifyContent:"center"}}>
                   <Icon name="globe" size={14} color="#fff"/>
                 </div>
-                <span style={{color:c.text,fontWeight:800,fontSize:15,fontFamily:font}}>FareSpark</span>
+                <span style={{color:c.text,fontWeight:800,fontSize:15,fontFamily:font}}>Faresparks</span>
               </div>
               <p style={{color:c.textSubtle,fontSize:12,lineHeight:1.6,maxWidth:280,margin:0}}>
                 AI-powered travel planning. Turn a destination and a budget into a complete trip plan in 30 seconds.
@@ -2002,8 +2072,8 @@ export default function FareSpark() {
             </div>
           </div>
           <div style={{borderTop:`1px solid ${c.border}`,paddingTop:16,display:"flex",justifyContent:"space-between",flexWrap:"wrap",gap:8}}>
-            <span style={{color:c.textSubtle,fontSize:12}}>© 2026 FareSpark. All rights reserved.</span>
-            <span style={{color:c.textSubtle,fontSize:11}}>AI-estimated prices for reference only — always confirm live pricing on provider sites. Some links are affiliate links that help keep FareSpark free.</span>
+            <span style={{color:c.textSubtle,fontSize:12}}>© 2026 Faresparks. All rights reserved.</span>
+            <span style={{color:c.textSubtle,fontSize:11}}>AI-estimated prices for reference only — always confirm live pricing on provider sites. Some links are affiliate links that help keep Faresparks free.</span>
           </div>
         </footer>
 
@@ -2014,7 +2084,7 @@ export default function FareSpark() {
           {[...Array(10)].map((_,i)=>(
             <div key={i} style={{display:"flex",gap:"80px",whiteSpace:"nowrap"}}>
               {[...Array(5)].map((_,j)=>(
-                <span key={j} style={{fontSize:30,fontWeight:900,color:"rgba(232,82,10,0.08)",fontFamily:'"Sora",system-ui,sans-serif',letterSpacing:"-0.02em",userSelect:"none"}}>FareSpark</span>
+                <span key={j} style={{fontSize:30,fontWeight:900,color:"rgba(232,82,10,0.08)",fontFamily:'"Sora",system-ui,sans-serif',letterSpacing:"-0.02em",userSelect:"none"}}>Faresparks</span>
               ))}
             </div>
           ))}
@@ -2022,7 +2092,7 @@ export default function FareSpark() {
 
         {/* Print footer */}
         <div className="print-only print-pg-footer" style={{position:"fixed",bottom:16,left:0,right:0,textAlign:"center",fontSize:10,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",color:"#b5ada4"}}>
-          FareSpark AI Travel Planner · farespark.app · Prices are AI estimates — verify before booking
+          Faresparks AI Travel Planner · Faresparks.app · Prices are AI estimates — verify before booking
         </div>
       </div>
     </>
