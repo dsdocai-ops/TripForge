@@ -21,8 +21,9 @@ const TP_PROG = {
   viator:     306,  // Viator     — check TP dashboard
   rentalcars: 183,  // RentalCars (standard TP program ID)
 };
-// Wraps any destination URL in a TP tracked redirect
+// Wraps any destination URL in a TP tracked redirect; falls back to direct URL until marker is set
 function tpLink(progId, url) {
+  if (TP_MARKER === "YOURMARKER") return url;
   return `https://tp.media/r?marker=${TP_MARKER}&p=${progId}&u=${encodeURIComponent(url)}`;
 }
 
@@ -308,7 +309,7 @@ function PriceHacksPanel({ form, apiKey }) {
     askClaude(
       `Travel pricing expert. Return ONLY a JSON object. Rules: (1) bestDayToFly: cheapest day(s) of week for this exact route, e.g. "Tuesday or Wednesday" (2) budgetAirlines: array of 1-3 real budget/low-cost carriers that fly this route — empty array if none (3) nearbyAirport: if a major alternate airport within 60 miles of origin OR destination is meaningfully cheaper, return {"name":"Airport Name","iata":"XXX","side":"origin"|"destination","savingEstimate":"10-20%"} — else null (4) bookingWindow: how far ahead to book for best price, e.g. "6-8 weeks ahead" (5) offPeakTip: one sentence, max 16 words, cheapest travel period for this destination. Return exactly: {"bestDayToFly":"string","budgetAirlines":["string"],"nearbyAirport":null|{"name":"string","iata":"string","side":"string","savingEstimate":"string"},"bookingWindow":"string","offPeakTip":"string"}. No markdown.`,
       `Route: ${form.from || "New York"} to ${form.destination}. Date: ${form.dateFrom || "flexible"}. Style: ${form.style || "general"}. Budget: $${form.budget || 3000}.`,
-      apiKey, 400
+      apiKey, 700
     ).then(raw => {
       try { const d = parseJSON(raw); sSet(ck, d); setHacks(d); } catch {}
     }).catch(() => {}).finally(() => setLoading(false));
