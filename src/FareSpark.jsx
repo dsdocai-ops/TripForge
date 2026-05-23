@@ -9,6 +9,23 @@ const CLAUDE_MODEL = "claude-haiku-4-5-20251001";
 const PROXY_URL    = import.meta.env.VITE_PROXY_URL || "";
 const SITE_API_KEY = import.meta.env.VITE_ANTHROPIC_API_KEY || "YOUR_ANTHROPIC_API_KEY_HERE";
 
+// ─── Travelpayouts affiliate ──────────────────────────────────────────────────
+// ONE credential to fill in: your partner marker from https://tp.media/promo
+// Program IDs: verify each in your TP dashboard under the brand's Tools > Links
+const TP_MARKER = "YOURMARKER";
+const TP_PROG = {
+  skyscanner: 116,  // Skyscanner — check TP dashboard
+  kayak:       50,  // Kayak      — check TP dashboard
+  booking:      3,  // Booking.com (standard TP program ID)
+  expedia:    221,  // Expedia    — check TP dashboard
+  viator:     306,  // Viator     — check TP dashboard
+  rentalcars: 183,  // RentalCars (standard TP program ID)
+};
+// Wraps any destination URL in a TP tracked redirect
+function tpLink(progId, url) {
+  return `https://tp.media/r?marker=${TP_MARKER}&p=${progId}&u=${encodeURIComponent(url)}`;
+}
+
 // ─── Affiliate links (deep-linked with dates + traveler count) ───────────────
 // Converts "New York" or "New York, NY, USA" → "new-york" for Skyscanner/Kayak slugs
 function slugify(s) { return cityOnly(s||"").toLowerCase().trim().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,""); }
@@ -18,51 +35,66 @@ const AFF = {
     const d1 = (date||"").replace(/-/g,"").slice(2); // YYMMDD
     const d2 = (dateReturn||"").replace(/-/g,"").slice(2);
     const seg = d1 ? (d2 ? `${d1}/${d2}` : d1) : "any";
-    return `https://www.skyscanner.com/transport/flights/${slugify(from)||"anywhere"}/${slugify(to)||"anywhere"}/${seg}/?adults=${travelers}&utm_source=YOURAFFID`;
+    const base = `https://www.skyscanner.com/transport/flights/${slugify(from)||"anywhere"}/${slugify(to)||"anywhere"}/${seg}/?adults=${travelers}`;
+    return tpLink(TP_PROG.skyscanner, base);
   },
   kayakFlightsIATA: (fromIATA, toIATA, date="", travelers=1, cabin="", airlineCode="") => {
-    // Kayak cabin slug: e→economy, pe→premiumeconomy, b→business, f→first
     const CABIN_MAP = { e:"economy", pe:"premiumeconomy", b:"business", f:"first" };
     const cabinSlug = CABIN_MAP[cabin] || (cabin && !CABIN_MAP[cabin] ? cabin : "");
-    let url = `https://www.kayak.com/flights/${(fromIATA||"").toUpperCase()}-${(toIATA||"").toUpperCase()}${date?"/"+date:""}?adults=${travelers}&sort=price_a&siteid=YOURAFFID`;
-    if (cabinSlug) url += `&cabin=${cabinSlug}`;
-    if (airlineCode) url += `&fs=airlines=${airlineCode.toUpperCase()}`;
-    return url;
+    let base = `https://www.kayak.com/flights/${(fromIATA||"").toUpperCase()}-${(toIATA||"").toUpperCase()}${date?"/"+date:""}?adults=${travelers}&sort=price_a`;
+    if (cabinSlug) base += `&cabin=${cabinSlug}`;
+    if (airlineCode) base += `&fs=airlines=${airlineCode.toUpperCase()}`;
+    return tpLink(TP_PROG.kayak, base);
   },
   bookingHotels: (dest, checkin="", checkout="", travelers=1, hotelName="") => {
     const q = hotelName ? `${hotelName} ${dest}` : (dest || "");
-    return `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(q)}&checkin=${checkin}&checkout=${checkout}&group_adults=${travelers}&no_rooms=1&aid=YOURAFFID`;
+    const base = `https://www.booking.com/searchresults.html?ss=${encodeURIComponent(q)}&checkin=${checkin}&checkout=${checkout}&group_adults=${travelers}&no_rooms=1`;
+    return tpLink(TP_PROG.booking, base);
   },
-  expediaHotels: (dest, checkin="", checkout="", travelers=1) =>
-    `https://www.expedia.com/Hotel-Search?destination=${encodeURIComponent(dest||"")}&startDate=${checkin}&endDate=${checkout}&adults=${travelers}&affcid=YOURAFFID`,
-  expediaFlights: (from, to, date="", travelers=1) =>
-    `https://www.expedia.com/Flights-Search?flight-type=on&mode=search&trip=oneway&leg1=from:${encodeURIComponent(from||"")},to:${encodeURIComponent(to||"")},departure:${date}TANYT&passengers=adults:${travelers},children:0,infantinlap:Y&affcid=YOURAFFID`,
+  expediaHotels: (dest, checkin="", checkout="", travelers=1) => {
+    const base = `https://www.expedia.com/Hotel-Search?destination=${encodeURIComponent(dest||"")}&startDate=${checkin}&endDate=${checkout}&adults=${travelers}`;
+    return tpLink(TP_PROG.expedia, base);
+  },
+  expediaFlights: (from, to, date="", travelers=1) => {
+    const base = `https://www.expedia.com/Flights-Search?flight-type=on&mode=search&trip=oneway&leg1=from:${encodeURIComponent(from||"")},to:${encodeURIComponent(to||"")},departure:${date}TANYT&passengers=adults:${travelers},children:0,infantinlap:Y`;
+    return tpLink(TP_PROG.expedia, base);
+  },
   kayakCars: (iataOrCity, pickup="", dropoff="", carType="") => {
     const loc = (iataOrCity||"").toUpperCase().length === 3 ? iataOrCity.toUpperCase() : slugify(iataOrCity||"");
     const base = `https://www.kayak.com/cars/${loc}`;
     const dated = (pickup && dropoff) ? `${base}/${pickup}/${dropoff}` : base;
-    return carType ? `${dated}?sort=price_a&filter=cabtype_${carType}&siteid=YOURAFFID` : `${dated}?sort=price_a&siteid=YOURAFFID`;
+    const full = carType ? `${dated}?sort=price_a&filter=cabtype_${carType}` : `${dated}?sort=price_a`;
+    return tpLink(TP_PROG.kayak, full);
   },
-  kayakFlights: (from, to, date="", travelers=1) =>
-    `https://www.kayak.com/flights/${slugify(from)}-${slugify(to)}${date?"/"+date:""}?adults=${travelers}&siteid=YOURAFFID`,
+  kayakFlights: (from, to, date="", travelers=1) => {
+    const base = `https://www.kayak.com/flights/${slugify(from)}-${slugify(to)}${date?"/"+date:""}?adults=${travelers}`;
+    return tpLink(TP_PROG.kayak, base);
+  },
   rentalcars: (dest, pickup="", dropoff="", carType="") => {
-    const base = `https://www.rentalcars.com/SearchResults.do?affiliateCode=YOURAFFID&preflang=en&adplat=search&location=${encodeURIComponent(dest||"")}&d1=${pickup}&d2=${dropoff}`;
-    return carType ? `${base}&carType=${carType}` : base;
+    const base = `https://www.rentalcars.com/SearchResults.do?preflang=en&adplat=search&location=${encodeURIComponent(dest||"")}&d1=${pickup}&d2=${dropoff}`;
+    const full = carType ? `${base}&carType=${carType}` : base;
+    return tpLink(TP_PROG.rentalcars, full);
   },
   expediaCars: (dest, pickup="", dropoff="", carType="") => {
-    const base = `https://www.expedia.com/Cars/search?location=${encodeURIComponent(dest||"")}&startDate=${pickup}&endDate=${dropoff}&affcid=YOURAFFID`;
-    return carType ? `${base}&carType=${carType}` : base;
+    const base = `https://www.expedia.com/Cars/search?location=${encodeURIComponent(dest||"")}&startDate=${pickup}&endDate=${dropoff}`;
+    const full = carType ? `${base}&carType=${carType}` : base;
+    return tpLink(TP_PROG.expedia, full);
   },
-  viator: (dest) =>
-    `https://www.viator.com/searchResults/all?text=${encodeURIComponent(dest||"")}&pid=YOURAFFID`,
+  viator: (dest) => {
+    const base = `https://www.viator.com/searchResults/all?text=${encodeURIComponent(dest||"")}`;
+    return tpLink(TP_PROG.viator, base);
+  },
   stay22Hotels: (dest, checkin="", checkout="", guests=2) =>
     `https://www.stay22.com/book?aid=faresparks&address=${encodeURIComponent(dest||"")}&checkin=${checkin}&checkout=${checkout}&guests=${guests}`,
   kayakPackages: (from, to, date="", returnDate="", travelers=1) => {
     const seg = date ? (returnDate ? `${date}/${returnDate}` : date) : "";
-    return `https://www.kayak.com/packages/${slugify(from)}-${slugify(to)}${seg?"/"+seg:""}?adults=${travelers}&siteid=YOURAFFID`;
+    const base = `https://www.kayak.com/packages/${slugify(from)}-${slugify(to)}${seg?"/"+seg:""}?adults=${travelers}`;
+    return tpLink(TP_PROG.kayak, base);
   },
-  expediaPackages: (from, to, date="", returnDate="", travelers=1) =>
-    `https://www.expedia.com/Deals/Packages/Hotel-Flight?from=${encodeURIComponent(from||"")}&to=${encodeURIComponent(to||"")}&startDate=${date}&endDate=${returnDate}&adults=${travelers}&affcid=YOURAFFID`,
+  expediaPackages: (from, to, date="", returnDate="", travelers=1) => {
+    const base = `https://www.expedia.com/Deals/Packages/Hotel-Flight?from=${encodeURIComponent(from||"")}&to=${encodeURIComponent(to||"")}&startDate=${date}&endDate=${returnDate}&adults=${travelers}`;
+    return tpLink(TP_PROG.expedia, base);
+  },
 };
 
 // ─── Aircraft photos — keyed by lowercase keyword for fuzzy matching ──────────
