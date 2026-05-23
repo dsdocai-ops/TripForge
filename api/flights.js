@@ -63,6 +63,7 @@ export default async function handler(req, res) {
 
     let cheapest = null;
     let cheaperDay = null;
+    let monthCheapest = null;
 
     // Try month-matrix for per-day pricing
     const matrixUrl = `https://api.travelpayouts.com/v2/prices/month-matrix?origin=${fromCode}&destination=${toCode}&month=${month}&currency=USD&show_to_affiliates=true&one_way=true&token=${TP_TOKEN}`;
@@ -82,14 +83,28 @@ export default async function handler(req, res) {
 
         cheapest = targetEntry || nearby[0] || entries.sort((a, b) => a.price - b.price)[0];
 
-        // Suggest a cheaper nearby date if it saves >10% vs the user's exact date
+        // Suggest a cheaper nearby date if it saves >5% and >$15 vs the user's exact date
         if (targetEntry && nearby[0] && nearby[0].departure_at?.slice(0, 10) !== date) {
           const savings = targetEntry.price - nearby[0].price;
-          if (savings > 0 && savings / targetEntry.price > 0.10) {
+          if (savings > 15 && savings / targetEntry.price > 0.05) {
             cheaperDay = {
               date:    nearby[0].departure_at.slice(0, 10),
               price:   Math.round(nearby[0].price * (parseInt(adults, 10) || 1)),
               savings: Math.round(savings * (parseInt(adults, 10) || 1)),
+            };
+          }
+        }
+
+        // Surface the absolute cheapest day in the full month if it's >15% cheaper than target
+        const absoluteCheapest = entries.slice().sort((a, b) => a.price - b.price)[0];
+        if (targetEntry && absoluteCheapest && absoluteCheapest.departure_at?.slice(0, 10) !== date) {
+          const fullSavings = targetEntry.price - absoluteCheapest.price;
+          const fullDate = absoluteCheapest.departure_at.slice(0, 10);
+          if (fullSavings > 0 && fullSavings / targetEntry.price > 0.15 && (!cheaperDay || fullDate !== cheaperDay.date)) {
+            monthCheapest = {
+              date:    fullDate,
+              price:   Math.round(absoluteCheapest.price * (parseInt(adults, 10) || 1)),
+              savings: Math.round(fullSavings * (parseInt(adults, 10) || 1)),
             };
           }
         }
@@ -141,7 +156,8 @@ export default async function handler(req, res) {
       toCode,
       cabins,
       fetchedAt: Date.now(),
-      ...(cheaperDay && { cheaperDay }),
+      ...(cheaperDay    && { cheaperDay }),
+      ...(monthCheapest && { monthCheapest }),
     };
     await redis.set(ck, result, { ex: 1800 });
     return res.status(200).json(result);

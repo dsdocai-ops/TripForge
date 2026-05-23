@@ -57,6 +57,12 @@ const AFF = {
     `https://www.viator.com/searchResults/all?text=${encodeURIComponent(dest||"")}&pid=YOURAFFID`,
   stay22Hotels: (dest, checkin="", checkout="", guests=2) =>
     `https://www.stay22.com/book?aid=faresparks&address=${encodeURIComponent(dest||"")}&checkin=${checkin}&checkout=${checkout}&guests=${guests}`,
+  kayakPackages: (from, to, date="", returnDate="", travelers=1) => {
+    const seg = date ? (returnDate ? `${date}/${returnDate}` : date) : "";
+    return `https://www.kayak.com/packages/${slugify(from)}-${slugify(to)}${seg?"/"+seg:""}?adults=${travelers}&siteid=YOURAFFID`;
+  },
+  expediaPackages: (from, to, date="", returnDate="", travelers=1) =>
+    `https://www.expedia.com/Deals/Packages/Hotel-Flight?from=${encodeURIComponent(from||"")}&to=${encodeURIComponent(to||"")}&startDate=${date}&endDate=${returnDate}&adults=${travelers}&affcid=YOURAFFID`,
 };
 
 // ─── Aircraft photos — keyed by lowercase keyword for fuzzy matching ──────────
@@ -282,9 +288,17 @@ function PriceHacksPanel({ form, apiKey }) {
   const chips = [
     hacks.bestDayToFly && { icon:"📅", text:`Fly ${hacks.bestDayToFly}` },
     hacks.budgetAirlines?.length > 0 && { icon:"✈️", text:hacks.budgetAirlines.join(", ") },
-    hacks.nearbyAirport && { icon:"🛬", text:`${hacks.nearbyAirport.name} (${hacks.nearbyAirport.iata}) · save ${hacks.nearbyAirport.savingEstimate}` },
+    hacks.nearbyAirport && {
+      icon:"🛬",
+      text:`${hacks.nearbyAirport.name} (${hacks.nearbyAirport.iata}) · save ${hacks.nearbyAirport.savingEstimate} →`,
+      href: hacks.nearbyAirport.side === "origin"
+        ? AFF.skyscanner(hacks.nearbyAirport.iata, cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers||1)
+        : AFF.skyscanner(cityOnly(form.from||""), hacks.nearbyAirport.iata, form.dateFrom, form.dateTo, form.travelers||1),
+    },
     hacks.bookingWindow && { icon:"🗓", text:`Book ${hacks.bookingWindow}` },
   ].filter(Boolean);
+
+  const chipBase = {display:"inline-flex",alignItems:"center",gap:5,background:c.surface,border:`1px solid ${c.border}`,borderRadius:999,padding:"5px 11px",fontSize:12,fontFamily:fontBody,textDecoration:"none"};
 
   return (
     <div style={{background:c.tealLow,border:`1.5px solid rgba(15,212,200,0.2)`,borderRadius:12,padding:"12px 16px",marginBottom:18}}>
@@ -293,11 +307,10 @@ function PriceHacksPanel({ form, apiKey }) {
         <span style={{color:c.teal,fontWeight:800,fontSize:12,fontFamily:fontBody,letterSpacing:"0.04em"}}>WAYS TO PAY LESS</span>
       </div>
       <div style={{display:"flex",flexWrap:"wrap",gap:7,marginBottom:hacks.offPeakTip?8:0}}>
-        {chips.map((chip,i) => (
-          <span key={i} style={{display:"inline-flex",alignItems:"center",gap:5,background:c.surface,border:`1px solid ${c.border}`,borderRadius:999,padding:"5px 11px",fontSize:12,color:c.text,fontFamily:fontBody}}>
-            <span>{chip.icon}</span><span>{chip.text}</span>
-          </span>
-        ))}
+        {chips.map((chip,i) => chip.href
+          ? <a key={i} href={chip.href} target="_blank" rel="noopener noreferrer" style={{...chipBase,color:c.teal,borderColor:"rgba(15,212,200,0.35)"}}><span>{chip.icon}</span><span>{chip.text}</span></a>
+          : <span key={i} style={{...chipBase,color:c.text}}><span>{chip.icon}</span><span>{chip.text}</span></span>
+        )}
       </div>
       {hacks.offPeakTip && <p style={{color:c.textMuted,fontSize:12,margin:0,lineHeight:1.5}}>{hacks.offPeakTip}</p>}
     </div>
@@ -1020,7 +1033,7 @@ function FlightsTab({ form, settings, apiKey }) {
       // 2. Fall back to Claude AI estimates
       if (!apiKey) throw new Error("no key");
       const raw = await askClaude(
-        `Flight data expert. Return ONLY a JSON array of 4 flight options. Strict rules: (1) Only airlines that genuinely operate this exact route. (2) iataFrom/iataTo: correct primary IATA airport codes. (3) airlineCode: the airline's official 2-letter IATA carrier code (e.g. "AA" for American, "BA" for British Airways, "LH" for Lufthansa, "DL" for Delta, "UA" for United, "AF" for Air France, "EK" for Emirates, "QR" for Qatar, "SQ" for Singapore, "FR" for Ryanair, "U2" for easyJet — use the real code). (4) estimatedPrice = realistic economy fare per person ONE-WAY: domestic US/Canada $100-380 (short-haul $100-200, coast-to-coast $180-380); intra-Europe $40-260 (budget $40-130, full-service $90-260); transatlantic US↔Europe $350-1050 (+30% peak summer/holiday); US/Europe↔Asia $420-1100; intra-Asia $60-380; US/Europe↔Latin America $200-650; US/Europe↔Middle East/Africa $450-1200; Oceania long-haul $600-1400. +25-40% peak season. (5) Include nonstop and 1-stop where airlines actually fly them. (6) flightNumber: real IATA prefix + plausible number. (7) duration accurate for the route. Each: {"airline":"string","airlineCode":"XX","from":"string","to":"string","iataFrom":"XXX","iataTo":"YYY","depart":"HH:MM","arrive":"HH:MM","duration":"Xh Ym","stops":0,"estimatedPrice":000,"refundable":true,"flightNumber":"XX 000","bookingClass":"Economy"}. No markdown. Exactly 4 items.`,
+        `Flight data expert. Return ONLY a JSON array of 4 flight options. Strict rules: (1) Only airlines that genuinely operate this exact route. (2) iataFrom/iataTo: correct primary IATA airport codes. (3) airlineCode: the airline's official 2-letter IATA carrier code (e.g. "AA" for American, "BA" for British Airways, "LH" for Lufthansa, "DL" for Delta, "UA" for United, "AF" for Air France, "EK" for Emirates, "QR" for Qatar, "SQ" for Singapore, "FR" for Ryanair, "U2" for easyJet — use the real code). (4) ORDERING: item 0 MUST be the absolute cheapest option on this route — use a budget/low-cost carrier (Spirit, Frontier, Ryanair, EasyJet, WizzAir, Vueling, IndiGo, AirAsia, etc.) or basic economy fare if one genuinely flies this route; only use full-service if no LCC operates it. Items 1-3 sorted by price ascending. (5) estimatedPrice = realistic economy fare per person ONE-WAY: domestic US/Canada $100-380 (short-haul $100-200, coast-to-coast $180-380); intra-Europe $40-260 (budget $40-130, full-service $90-260); transatlantic US↔Europe $350-1050 (+30% peak summer/holiday); US/Europe↔Asia $420-1100; intra-Asia $60-380; US/Europe↔Latin America $200-650; US/Europe↔Middle East/Africa $450-1200; Oceania long-haul $600-1400. +25-40% peak season. (6) Include nonstop and 1-stop where airlines actually fly them. (7) flightNumber: real IATA prefix + plausible number. (8) duration accurate for the route. Each: {"airline":"string","airlineCode":"XX","from":"string","to":"string","iataFrom":"XXX","iataTo":"YYY","depart":"HH:MM","arrive":"HH:MM","duration":"Xh Ym","stops":0,"estimatedPrice":000,"refundable":true,"flightNumber":"XX 000","bookingClass":"Economy"}. No markdown. Exactly 4 items.`,
         `Flights from ${form.from || "New York"} to ${form.destination}${form.dateFrom ? ` on ${form.dateFrom}` : ""}. ${form.travelers || 2} traveler(s). Travel style: ${form.style || "general"}. Budget consideration: $${form.budget || 3000} total trip.`,
         apiKey, 1200
       );
@@ -1057,6 +1070,7 @@ function FlightsTab({ form, settings, apiKey }) {
           {name:"🔍 Skyscanner", url:skUrl, primary:true},
           {name:"Expedia", url:AFF.expediaFlights(fromCity, destCity, form.dateFrom, form.travelers)},
           {name:"Kayak", url:AFF.kayakFlights(fromCity, destCity, form.dateFrom, form.travelers)},
+          ...(form.dateTo ? [{name:"🎁 Flight+Hotel", url:AFF.kayakPackages(fromCity, destCity, form.dateFrom, form.dateTo, form.travelers||1)}] : []),
         ].map(s => (
           <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
             style={{padding:"10px 18px",background:s.primary?c.accentLow:c.surface,border:`1.5px solid ${s.primary?c.accentBorder:c.border}`,borderRadius:10,color:s.primary?c.accentHi:c.textMuted,textDecoration:"none",fontSize:13,fontWeight:700,fontFamily:fontBody}}>
@@ -1082,6 +1096,15 @@ function FlightsTab({ form, settings, apiKey }) {
           <p style={{color:c.teal,fontSize:13,margin:0,fontWeight:700,flex:1}}>
             Fly {new Date(flights.cheaperDay.date+"T12:00:00").toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"})} instead — save ${flights.cheaperDay.savings} per person
             <a href={AFF.kayakFlightsIATA(flights.fromCode, flights.toCode, flights.cheaperDay.date, form.travelers||1, "e")} target="_blank" rel="noopener noreferrer" style={{marginLeft:12,color:c.accentHi,fontSize:12,fontWeight:700,textDecoration:"none"}}>Search this date →</a>
+          </p>
+        </div>
+      )}
+      {isLive && flights?.monthCheapest && (
+        <div style={{background:c.tealLow,border:`1.5px solid rgba(15,212,200,0.2)`,borderRadius:10,padding:"10px 16px",marginBottom:18,display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
+          <span style={{fontSize:15}}>📅</span>
+          <p style={{color:c.teal,fontSize:13,margin:0,fontWeight:700,flex:1}}>
+            Cheapest this month: {new Date(flights.monthCheapest.date+"T12:00:00").toLocaleDateString("en",{weekday:"short",month:"short",day:"numeric"})} — save ${flights.monthCheapest.savings} per person
+            <a href={AFF.kayakFlightsIATA(flights.fromCode, flights.toCode, flights.monthCheapest.date, form.travelers||1, "e")} target="_blank" rel="noopener noreferrer" style={{marginLeft:12,color:c.accentHi,fontSize:12,fontWeight:700,textDecoration:"none"}}>Search →</a>
           </p>
         </div>
       )}
@@ -1293,6 +1316,7 @@ function HotelsTab({ form, settings, apiKey }) {
           {name:"Booking.com", url:AFF.bookingHotels(cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers)},
           {name:"Expedia", url:AFF.expediaHotels(cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers)},
           {name:"TripAdvisor", url:`https://www.tripadvisor.com/Search?q=${encodeURIComponent(cityOnly(form.destination||"")+" hotels")}`},
+          ...(form.from && form.dateTo ? [{name:"🎁 Flight+Hotel", url:AFF.kayakPackages(cityOnly(form.from), cityOnly(form.destination), form.dateFrom, form.dateTo, form.travelers||1)}] : []),
         ].map(s => (
           <a key={s.name} href={s.url} target="_blank" rel="noopener noreferrer"
             style={{padding:"10px 16px",background:s.primary?c.accentLow:c.surface,border:`1.5px solid ${s.primary?c.accentBorder:c.border}`,borderRadius:10,color:s.primary?c.accentHi:c.textMuted,textDecoration:"none",fontSize:13,fontWeight:s.primary?700:600,fontFamily:fontBody}}>
@@ -1409,6 +1433,10 @@ function HotelsTab({ form, settings, apiKey }) {
                 <a href={bookUrl} target="_blank" rel="noopener noreferrer"
                   style={{display:"block",textAlign:"center",padding:"11px 14px",background:`linear-gradient(135deg,${c.accent},${c.accentHi})`,borderRadius:10,color:"#fff",textDecoration:"none",fontSize:14,fontWeight:800}}>
                   Book Now →
+                </a>
+                <a href={AFF.bookingHotels(cityOnly(form.destination), form.dateFrom||"", form.dateTo||"", form.travelers||2, h.name)} target="_blank" rel="noopener noreferrer"
+                  style={{display:"block",textAlign:"center",padding:"7px 14px",background:c.bg2,border:`1px solid ${c.border}`,borderRadius:10,color:c.textMuted,textDecoration:"none",fontSize:12,fontWeight:600,marginTop:6}}>
+                  Compare on Booking.com →
                 </a>
                 <div style={{color:c.textSubtle,fontSize:10,marginTop:5,textAlign:"center"}}>via Stay22 · hotels, apartments &amp; vacation rentals</div>
               </div>
